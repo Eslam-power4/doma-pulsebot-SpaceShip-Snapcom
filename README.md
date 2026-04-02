@@ -109,17 +109,13 @@ GODADDY_USE_OTE=false
 EXPIRED_DOMAINS_URL=
 
 # Watcher filters/tuning
-ALLOWED_TLDS=.app,.dev,.com
+ALLOWED_TLDS=.dev,.app,.cloud,.my
 DOMAIN_KEYWORDS=ai,app,bot,cloud,code,data,dev,labs,ml,saas,tech,web
 MAX_SLD_LENGTH=14
 STANDARD_REG_MAX_USD=15
 DISCOUNT_TRIGGER_PERCENT=50
 WATCHER_POLL_SECONDS=30
-ECO_POLL_SECONDS=30
-TURBO_POLL_SECONDS=12
-TURBO_HOURS_UTC=13,14,15,16,17,18,19,20,21,22
 ALERT_DB_PATH=alerts.db
-NEGATIVE_CACHE_TTL_SECONDS=300
 
 # Candidate generation and async throughput
 CANDIDATES_PER_CYCLE=20
@@ -130,6 +126,25 @@ BATCH_CHECK_SIZE=50
 API_MAX_RETRIES=4
 BACKOFF_BASE_SECONDS=0.5
 BACKOFF_CAP_SECONDS=8.0
+CHECK_CACHE_TTL_SECONDS=3600
+
+# Arbitrage valuation engine
+BASE_INTRINSIC_VALUE_USD=8
+KEYWORD_VALUE_USD=9
+MAX_SHORT_NAME_BONUS_USD=12
+SHORT_NAME_BONUS_PER_CHAR_USD=1.1
+AFTERMARKET_INTRINSIC_MULTIPLIER=1.1
+TLD_VALUE_WEIGHTS=.dev:1.35,.app:1.25,.cloud:1.2,.my:1.15,.com:1.0
+ARBITRAGE_MIN_GAP_USD=20
+ARBITRAGE_MIN_RATIO=1.8
+
+# Eco mode / active hour shaping (UTC)
+ECO_MODE_ENABLED=true
+ECO_POLL_SECONDS=120
+TURBO_POLL_SECONDS=30
+MIN_POLL_SECONDS=5
+TURBO_HOURS_UTC=12-21
+ECO_DEAD_HOURS_UTC=0-6
 
 # Namecheap official API (required fields)
 NAMECHEAP_API_USER=
@@ -142,6 +157,21 @@ NAMECHEAP_USE_SANDBOX=false
 NAMECOM_USERNAME=
 NAMECOM_TOKEN=
 NAMECOM_BASE_URL=https://api.name.com
+
+# Dynadot official API (for safe multi-provider balancing)
+DYNADOT_API_KEY=
+DYNADOT_BASE_URL=https://api.dynadot.com/api3.json
+
+# Secondary market / aftermarket scanners
+AFTERMARKET_ENABLED=true
+AFTERMARKET_MAX_LISTINGS_PER_SOURCE=75
+NAMECHEAP_MARKETPLACE_URL=https://www.namecheap.com/domains/marketplace/
+DYNADOT_AFTERMARKET_URL=https://www.dynadot.com/market/
+GODADDY_CLOSEOUTS_URL=https://www.godaddy.com/domains/aftermarket
+NAMECHEAP_MARKETPLACE_SELECTORS=tr,li,article,.listing,.result,.domain
+DYNADOT_AFTERMARKET_SELECTORS=tr,li,article,.listing,.result,.domain
+GODADDY_CLOSEOUTS_SELECTORS=tr,li,article,.listing,.result,.domain
+FALLBACK_MARKETPLACE_URL=https://www.namecheap.com/domains/marketplace/
 
 # Optional scraping source URL (disabled unless explicitly enabled)
 EXPIRED_DOMAINS_URL=

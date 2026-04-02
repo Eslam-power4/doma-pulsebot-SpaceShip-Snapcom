@@ -5,41 +5,24 @@ import os
 import random
 import re
 import sqlite3
-import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
-from typing import Iterable, Optional, Sequence
+from typing import Iterable, List, Optional, Sequence
 
 import aiohttp
 from bs4 import BeautifulSoup
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import Application
+from aftermarket_watcher import AftermarketSource
 
 LOGGER = logging.getLogger(__name__)
 SPECIAL_CHARS = r"_*[]()~`>#+-=|{}.!"
 GODADDY_MICRO_PRICE_THRESHOLD = 1000.0
 GODADDY_MICRO_DIVISOR = 1_000_000.0
-MIN_ULTRA_DISCOUNT_PRICE = 0.5
-ULTRA_DISCOUNT_MULTIPLIER = 0.3
-ULTRA_DISCOUNT_SCORE = 20
-DEEP_DISCOUNT_SCORE = 12
-REGULAR_DISCOUNT_SCORE = 6
-KEYWORD_SCORE_MAX = 50
-KEYWORD_BASE_SCORE = 20
-KEYWORD_LEN_MULTIPLIER = 3
-KEYWORD_EDGE_BONUS = 5
-KEYWORD_COMPONENT_CAP = 45
-LENGTH_COMPONENT_MAX = 30
-OPTIMAL_SLD_LENGTH = 6
-SHORT_LENGTH_UPPER_BOUND = 12
-LONG_NAME_BASE = 8
-SHORT_NAME_PENALTY = 4
-LONG_NAME_PENALTY = 2
-DROP_SIGNAL_SCORE = 5
-EXPIRED_SIGNAL_SCORE = 5
+MIN_CACHE_TTL_SECONDS = 60
 
 
 class RetryableAPIError(Exception):
@@ -118,20 +101,6 @@ def escape_md_v2(value: str) -> str:
     return escaped
 
 
-def dedupe_domains(domains: Sequence[str]) -> list[str]:
-    return list(dict.fromkeys(domains))
-
-
-def apply_negative_cache_updates(
-    cache: "TTLDomainCache", requested_domains: Sequence[str], available_domains: set[str]
-) -> None:
-    requested = {d.lower() for d in requested_domains}
-    for domain in requested - available_domains:
-        cache.put(domain)
-    for domain in available_domains:
-        cache.delete(domain)
-
-
 @dataclass(frozen=True)
 class DomainListing:
     domain: str
@@ -141,8 +110,8 @@ class DomainListing:
     currency: str = "USD"
     is_drop: bool = False
     is_expired: bool = False
+    is_aftermarket: bool = False
     keyword_match: Optional[str] = None
-    confidence_score: Optional[int] = None
 
     @property
     def whois_url(self) -> str:
@@ -158,13 +127,19 @@ class DomainListing:
         return self.domain.split(".", 1)[0].lower()
 
 
+@dataclass(frozen=True)
+class ArbitrageEvaluation:
+    intrinsic_value_usd: float
+    arbitrage_gap_usd: float
+    arbitrage_ratio: float
+    premium_keyword: Optional[str]
+    hot_deal_reason: Optional[str]
+
+
 @dataclass
 class WatcherConfig:
     poll_seconds: int = 30
-    eco_poll_seconds: int = 30
-    turbo_poll_seconds: int = 12
-    turbo_hours_utc: set[int] = field(default_factory=lambda: set(range(13, 23)))
-    allowed_tlds: set[str] = field(default_factory=lambda: {".app", ".dev", ".com"})
+    allowed_tlds: set[str] = field(default_factory=lambda: {".dev", ".app", ".cloud", ".my"})
     max_sld_len: int = 14
     keywords: set[str] = field(
         default_factory=lambda: {
@@ -184,6 +159,22 @@ class WatcherConfig:
     )
     standard_reg_max: float = 15.0
     discount_trigger_pct: float = 50.0
+    tld_value_weights: dict[str, float] = field(
+        default_factory=lambda: {
+            ".dev": 1.35,
+            ".app": 1.25,
+            ".cloud": 1.2,
+            ".my": 1.15,
+            ".com": 1.0,
+        }
+    )
+    keyword_value_usd: float = 9.0
+    max_short_name_bonus_usd: float = 12.0
+    short_name_bonus_per_char_usd: float = 1.1
+    aftermarket_intrinsic_multiplier: float = 1.1
+    base_intrinsic_value_usd: float = 8.0
+    arbitrage_min_gap_usd: float = 20.0
+    arbitrage_min_ratio: float = 1.8
     db_path: str = "alerts.db"
     candidates_per_cycle: int = 20
     per_source_concurrency: int = 10
@@ -197,7 +188,24 @@ class WatcherConfig:
     expired_domains_url: str = ""
     allow_unofficial_scraping: bool = False
     http_timeout_seconds: int = 20
-    negative_cache_ttl_seconds: int = 300
+    check_cache_ttl_seconds: int = 3600
+    eco_mode_enabled: bool = True
+    eco_poll_seconds: int = 120
+    turbo_poll_seconds: int = 30
+    min_poll_seconds: int = 5
+    turbo_hours_utc: set[int] = field(default_factory=lambda: {12, 13, 14, 15, 16, 17, 18, 19, 20, 21})
+    eco_dead_hours_utc: set[int] = field(default_factory=lambda: {0, 1, 2, 3, 4, 5, 6})
+    aftermarket_enabled: bool = True
+    aftermarket_max_listings_per_source: int = 75
+    namecheap_marketplace_url: str = "https://www.namecheap.com/domains/marketplace/"
+    dynadot_aftermarket_url: str = "https://www.dynadot.com/market/"
+    godaddy_closeouts_url: str = "https://www.godaddy.com/domains/aftermarket"
+    namecheap_marketplace_selectors: str = "tr, li, article, .listing, .result, .domain"
+    dynadot_aftermarket_selectors: str = "tr, li, article, .listing, .result, .domain"
+    godaddy_closeouts_selectors: str = "tr, li, article, .listing, .result, .domain"
+    dynadot_api_key: str = ""
+    dynadot_base_url: str = "https://api.dynadot.com/api3.json"
+    fallback_marketplace_url: str = "https://www.namecheap.com/domains/marketplace/"
     supplemental_words: list[str] = field(
         default_factory=lambda: [
             "byte",
@@ -213,29 +221,61 @@ class WatcherConfig:
         ]
     )
 
+    @property
+    def discount_trigger_fraction(self) -> float:
+        return self.discount_trigger_pct / 100.0
+
     @classmethod
     def from_env(cls) -> "WatcherConfig":
-        poll_seconds = int(os.getenv("WATCHER_POLL_SECONDS", "30"))
-        eco_poll_seconds = int(os.getenv("ECO_POLL_SECONDS", str(poll_seconds)))
-        turbo_poll_seconds = int(
-            os.getenv(
-                "TURBO_POLL_SECONDS",
-                str(max(5, eco_poll_seconds // 2)),
-            )
-        )
-        turbo_hours_raw = os.getenv("TURBO_HOURS_UTC", "13,14,15,16,17,18,19,20,21,22")
-        turbo_hours_utc: set[int] = set()
-        for hour in turbo_hours_raw.split(","):
-            text = hour.strip()
-            if not text.isdigit():
-                if text:
-                    LOGGER.warning("Ignoring invalid TURBO_HOURS_UTC value: %s", text)
-                continue
-            parsed_hour = int(text)
-            if 0 <= parsed_hour <= 23:
-                turbo_hours_utc.add(parsed_hour)
-            else:
-                LOGGER.warning("Ignoring out-of-range TURBO_HOURS_UTC hour: %s", text)
+        def parse_utc_hour_ranges(raw: str, default: set[int]) -> set[int]:
+            values: set[int] = set()
+            for token in raw.split(","):
+                token = token.strip()
+                if not token:
+                    continue
+                if "-" in token:
+                    left, _, right = token.partition("-")
+                    try:
+                        start = int(left)
+                        end = int(right)
+                    except ValueError:
+                        continue
+                    if start <= end:
+                        for h in range(start, end + 1):
+                            if 0 <= h <= 23:
+                                values.add(h)
+                    else:
+                        for h in list(range(start, 24)) + list(range(0, end + 1)):
+                            if 0 <= h <= 23:
+                                values.add(h)
+                    continue
+                try:
+                    hour = int(token)
+                except ValueError:
+                    continue
+                if 0 <= hour <= 23:
+                    values.add(hour)
+            return values or default
+
+        def parse_tld_weights_from_env(raw: str, default: dict[str, float]) -> dict[str, float]:
+            if not raw.strip():
+                return dict(default)
+            parsed: dict[str, float] = {}
+            for pair in raw.split(","):
+                left, sep, right = pair.partition(":")
+                if not sep:
+                    continue
+                tld = left.strip().lower()
+                if not tld:
+                    continue
+                if not tld.startswith("."):
+                    tld = f".{tld}"
+                try:
+                    parsed[tld] = max(0.1, float(right.strip()))
+                except ValueError:
+                    continue
+            return parsed or dict(default)
+
         keywords = {
             k.strip().lower()
             for k in os.getenv("DOMAIN_KEYWORDS", "").split(",")
@@ -243,8 +283,15 @@ class WatcherConfig:
         }
         tlds = {
             t.strip().lower() if t.strip().startswith(".") else f".{t.strip().lower()}"
-            for t in os.getenv("ALLOWED_TLDS", ".app,.dev,.com").split(",")
+            for t in os.getenv("ALLOWED_TLDS", ".dev,.app,.cloud,.my").split(",")
             if t.strip()
+        }
+        default_weights = {
+            ".dev": 1.35,
+            ".app": 1.25,
+            ".cloud": 1.2,
+            ".my": 1.15,
+            ".com": 1.0,
         }
         legacy_go_candidates = os.getenv("GODADDY_CANDIDATES_PER_CYCLE", "").strip()
         if legacy_go_candidates and not os.getenv("CANDIDATES_PER_CYCLE", "").strip():
@@ -252,11 +299,8 @@ class WatcherConfig:
                 "GODADDY_CANDIDATES_PER_CYCLE is deprecated; use CANDIDATES_PER_CYCLE."
             )
         return cls(
-            poll_seconds=poll_seconds,
-            eco_poll_seconds=max(5, eco_poll_seconds),
-            turbo_poll_seconds=max(3, turbo_poll_seconds),
-            turbo_hours_utc=turbo_hours_utc or set(range(13, 23)),
-            allowed_tlds=tlds or {".app", ".dev", ".com"},
+            poll_seconds=int(os.getenv("WATCHER_POLL_SECONDS", "30")),
+            allowed_tlds=tlds or {".dev", ".app", ".cloud", ".my"},
             max_sld_len=int(os.getenv("MAX_SLD_LENGTH", "14")),
             keywords=keywords
             or {
@@ -275,6 +319,17 @@ class WatcherConfig:
             },
             standard_reg_max=float(os.getenv("STANDARD_REG_MAX_USD", "15")),
             discount_trigger_pct=float(os.getenv("DISCOUNT_TRIGGER_PERCENT", "50")),
+            tld_value_weights=parse_tld_weights_from_env(
+                os.getenv("TLD_VALUE_WEIGHTS", ""),
+                default_weights,
+            ),
+            keyword_value_usd=float(os.getenv("KEYWORD_VALUE_USD", "9")),
+            max_short_name_bonus_usd=float(os.getenv("MAX_SHORT_NAME_BONUS_USD", "12")),
+            short_name_bonus_per_char_usd=float(os.getenv("SHORT_NAME_BONUS_PER_CHAR_USD", "1.1")),
+            aftermarket_intrinsic_multiplier=float(os.getenv("AFTERMARKET_INTRINSIC_MULTIPLIER", "1.1")),
+            base_intrinsic_value_usd=float(os.getenv("BASE_INTRINSIC_VALUE_USD", "8")),
+            arbitrage_min_gap_usd=float(os.getenv("ARBITRAGE_MIN_GAP_USD", "20")),
+            arbitrage_min_ratio=float(os.getenv("ARBITRAGE_MIN_RATIO", "1.8")),
             db_path=os.getenv("ALERT_DB_PATH", "alerts.db"),
             candidates_per_cycle=int(
                 os.getenv(
@@ -293,7 +348,53 @@ class WatcherConfig:
             expired_domains_url=os.getenv("EXPIRED_DOMAINS_URL", "").strip(),
             allow_unofficial_scraping=os.getenv("ALLOW_UNOFFICIAL_SCRAPING", "false").lower() == "true",
             http_timeout_seconds=int(os.getenv("HTTP_TIMEOUT_SECONDS", "20")),
-            negative_cache_ttl_seconds=int(os.getenv("NEGATIVE_CACHE_TTL_SECONDS", "300")),
+            check_cache_ttl_seconds=int(os.getenv("CHECK_CACHE_TTL_SECONDS", "3600")),
+            eco_mode_enabled=os.getenv("ECO_MODE_ENABLED", "true").lower() == "true",
+            eco_poll_seconds=int(os.getenv("ECO_POLL_SECONDS", "120")),
+            turbo_poll_seconds=int(os.getenv("TURBO_POLL_SECONDS", "30")),
+            min_poll_seconds=int(os.getenv("MIN_POLL_SECONDS", "5")),
+            turbo_hours_utc=parse_utc_hour_ranges(
+                os.getenv("TURBO_HOURS_UTC", "12-21"),
+                {12, 13, 14, 15, 16, 17, 18, 19, 20, 21},
+            ),
+            eco_dead_hours_utc=parse_utc_hour_ranges(
+                os.getenv("ECO_DEAD_HOURS_UTC", "0-6"),
+                {0, 1, 2, 3, 4, 5, 6},
+            ),
+            aftermarket_enabled=os.getenv("AFTERMARKET_ENABLED", "true").lower() == "true",
+            aftermarket_max_listings_per_source=int(
+                os.getenv("AFTERMARKET_MAX_LISTINGS_PER_SOURCE", "75")
+            ),
+            namecheap_marketplace_url=os.getenv(
+                "NAMECHEAP_MARKETPLACE_URL",
+                "https://www.namecheap.com/domains/marketplace/",
+            ).strip(),
+            dynadot_aftermarket_url=os.getenv(
+                "DYNADOT_AFTERMARKET_URL",
+                "https://www.dynadot.com/market/",
+            ).strip(),
+            godaddy_closeouts_url=os.getenv(
+                "GODADDY_CLOSEOUTS_URL",
+                "https://www.godaddy.com/domains/aftermarket",
+            ).strip(),
+            namecheap_marketplace_selectors=os.getenv(
+                "NAMECHEAP_MARKETPLACE_SELECTORS",
+                "tr, li, article, .listing, .result, .domain",
+            ).strip(),
+            dynadot_aftermarket_selectors=os.getenv(
+                "DYNADOT_AFTERMARKET_SELECTORS",
+                "tr, li, article, .listing, .result, .domain",
+            ).strip(),
+            godaddy_closeouts_selectors=os.getenv(
+                "GODADDY_CLOSEOUTS_SELECTORS",
+                "tr, li, article, .listing, .result, .domain",
+            ).strip(),
+            dynadot_api_key=os.getenv("DYNADOT_API_KEY", "").strip(),
+            dynadot_base_url=os.getenv("DYNADOT_BASE_URL", "https://api.dynadot.com/api3.json").strip(),
+            fallback_marketplace_url=os.getenv(
+                "FALLBACK_MARKETPLACE_URL",
+                "https://www.namecheap.com/domains/marketplace/",
+            ).strip(),
             supplemental_words=[
                 w.strip().lower()
                 for w in os.getenv(
@@ -340,27 +441,29 @@ class AlertStore:
         self.conn.close()
 
 
-class TTLDomainCache:
+class DomainCheckCache:
     def __init__(self, ttl_seconds: int) -> None:
-        self.ttl_seconds = max(1, ttl_seconds)
-        self._expiry: dict[str, float] = {}
+        self.ttl_seconds = max(MIN_CACHE_TTL_SECONDS, ttl_seconds)
+        self._cache: dict[str, datetime] = {}
 
-    def contains(self, domain: str) -> bool:
+    def should_check(self, domain: str) -> bool:
         key = domain.lower()
-        now = time.monotonic()
-        exp = self._expiry.get(key)
-        if exp is None:
+        now = datetime.now(timezone.utc)
+        expires_at = self._cache.get(key)
+        if expires_at and expires_at > now:
             return False
-        if exp <= now:
-            self._expiry.pop(key, None)
-            return False
+        if expires_at and expires_at <= now:
+            self._cache.pop(key, None)
         return True
 
-    def put(self, domain: str) -> None:
-        self._expiry[domain.lower()] = time.monotonic() + self.ttl_seconds
+    def mark_checked(self, domain: str) -> None:
+        self._cache[domain.lower()] = datetime.now(timezone.utc) + timedelta(seconds=self.ttl_seconds)
 
-    def delete(self, domain: str) -> None:
-        self._expiry.pop(domain.lower(), None)
+    def prune(self) -> None:
+        now = datetime.now(timezone.utc)
+        expired = [k for k, v in self._cache.items() if v <= now]
+        for key in expired:
+            self._cache.pop(key, None)
 
 
 class GoDaddyAvailabilitySource:
@@ -374,7 +477,6 @@ class GoDaddyAvailabilitySource:
         base_delay_seconds: float,
         cap_delay_seconds: float,
         per_source_concurrency: int,
-        negative_cache_ttl_seconds: int,
     ) -> None:
         self.session = session
         self.api_key = api_key
@@ -384,7 +486,6 @@ class GoDaddyAvailabilitySource:
         self.cap_delay_seconds = cap_delay_seconds
         self.per_source_concurrency = per_source_concurrency
         self._semaphore = asyncio.Semaphore(self.per_source_concurrency)
-        self._negative_cache = TTLDomainCache(ttl_seconds=negative_cache_ttl_seconds)
         self.base_url = (
             "https://api.ote-godaddy.com"
             if use_ote
@@ -393,16 +494,12 @@ class GoDaddyAvailabilitySource:
 
     async def fetch(self, candidates: Sequence[str]) -> list[DomainListing]:
         headers = {"Authorization": f"sso-key {self.api_key}:{self.api_secret}"}
-        deduped = dedupe_domains(candidates)
-        eligible = [domain for domain in deduped if not self._negative_cache.contains(domain)]
-        if not eligible:
-            return []
 
         async def guarded(domain: str) -> Optional[DomainListing]:
             async with self._semaphore:
                 return await self._check_domain(domain, headers)
 
-        tasks = [guarded(domain) for domain in eligible]
+        tasks = [guarded(domain) for domain in candidates]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         listings: list[DomainListing] = []
         for result in results:
@@ -436,7 +533,6 @@ class GoDaddyAvailabilitySource:
                     )
                 payload = await response.json()
                 if not payload.get("available"):
-                    self._negative_cache.put(domain)
                     return None
 
                 raw_price = payload.get("price")
@@ -456,18 +552,13 @@ class GoDaddyAvailabilitySource:
                     is_drop=True,
                 )
 
-        listing = await with_exponential_backoff(
+        return await with_exponential_backoff(
             op,
             op_name=f"GoDaddy check {domain}",
             base_delay_seconds=self.base_delay_seconds,
             cap_delay_seconds=self.cap_delay_seconds,
             max_retries=self.max_retries,
         )
-        if listing is None:
-            self._negative_cache.put(domain)
-        else:
-            self._negative_cache.delete(domain)
-        return listing
 
 
 class NamecheapAvailabilitySource:
@@ -483,7 +574,6 @@ class NamecheapAvailabilitySource:
         max_retries: int,
         base_delay_seconds: float,
         cap_delay_seconds: float,
-        negative_cache_ttl_seconds: int,
     ) -> None:
         self.session = session
         self.api_user = api_user
@@ -494,7 +584,6 @@ class NamecheapAvailabilitySource:
         self.max_retries = max_retries
         self.base_delay_seconds = base_delay_seconds
         self.cap_delay_seconds = cap_delay_seconds
-        self._negative_cache = TTLDomainCache(ttl_seconds=negative_cache_ttl_seconds)
         self.base_url = (
             "https://api.sandbox.namecheap.com/xml.response"
             if use_sandbox
@@ -504,13 +593,10 @@ class NamecheapAvailabilitySource:
     async def fetch(self, candidates: Sequence[str]) -> list[DomainListing]:
         if not candidates:
             return []
-        deduped = dedupe_domains(candidates)
-        eligible = [domain for domain in deduped if not self._negative_cache.contains(domain)]
-        if not eligible:
-            return []
+        deduped = list(dict.fromkeys(candidates))
         chunks = [
-            eligible[idx : idx + self.batch_check_size]
-            for idx in range(0, len(eligible), self.batch_check_size)
+            deduped[idx : idx + self.batch_check_size]
+            for idx in range(0, len(deduped), self.batch_check_size)
         ]
         tasks = [self._check_batch(batch) for batch in chunks if batch]
         if not tasks:
@@ -552,7 +638,6 @@ class NamecheapAvailabilitySource:
                 xml_text = await response.text()
                 root = ET.fromstring(xml_text)
                 listings: list[DomainListing] = []
-                available_domains: set[str] = set()
                 for node in root.iter():
                     if not node.tag.endswith("DomainCheckResult"):
                         continue
@@ -561,7 +646,6 @@ class NamecheapAvailabilitySource:
                         continue
                     if node.attrib.get("Available", "false").lower() != "true":
                         continue
-                    available_domains.add(domain)
 
                     price_usd = None
                     for key in (
@@ -588,7 +672,6 @@ class NamecheapAvailabilitySource:
                             is_drop=True,
                         )
                     )
-                apply_negative_cache_updates(self._negative_cache, domains, available_domains)
                 return listings
 
         return await with_exponential_backoff(
@@ -611,7 +694,6 @@ class NameComAvailabilitySource:
         max_retries: int,
         base_delay_seconds: float,
         cap_delay_seconds: float,
-        negative_cache_ttl_seconds: int,
     ) -> None:
         self.session = session
         self.auth = aiohttp.BasicAuth(login=username, password=token)
@@ -620,18 +702,14 @@ class NameComAvailabilitySource:
         self.max_retries = max_retries
         self.base_delay_seconds = base_delay_seconds
         self.cap_delay_seconds = cap_delay_seconds
-        self._negative_cache = TTLDomainCache(ttl_seconds=negative_cache_ttl_seconds)
 
     async def fetch(self, candidates: Sequence[str]) -> list[DomainListing]:
         if not candidates:
             return []
-        deduped = dedupe_domains(candidates)
-        eligible = [domain for domain in deduped if not self._negative_cache.contains(domain)]
-        if not eligible:
-            return []
+        deduped = list(dict.fromkeys(candidates))
         chunks = [
-            eligible[idx : idx + self.batch_check_size]
-            for idx in range(0, len(eligible), self.batch_check_size)
+            deduped[idx : idx + self.batch_check_size]
+            for idx in range(0, len(deduped), self.batch_check_size)
         ]
         tasks = [self._check_batch(batch) for batch in chunks if batch]
         if not tasks:
@@ -684,7 +762,6 @@ class NameComAvailabilitySource:
                 if not isinstance(raw_rows, list):
                     raw_rows = [payload_json]
                 listings: list[DomainListing] = []
-                available_domains: set[str] = set()
                 for row in raw_rows:
                     if not isinstance(row, dict):
                         continue
@@ -701,7 +778,6 @@ class NameComAvailabilitySource:
                         available = row.get("available")
                     if not bool(available):
                         continue
-                    available_domains.add(domain)
                     price_usd = None
                     for key in ("purchasePrice", "price", "premiumPrice"):
                         raw = row.get(key)
@@ -723,7 +799,6 @@ class NameComAvailabilitySource:
                             is_drop=True,
                         )
                     )
-                apply_negative_cache_updates(self._negative_cache, domains, available_domains)
                 return listings
 
         for endpoint in endpoints:
@@ -752,6 +827,113 @@ class NameComAvailabilitySource:
         raise RuntimeError(
             "Name.com API endpoint unavailable: "
             f"{type(last_error).__name__}: {last_error}"
+        )
+
+
+class DynadotAvailabilitySource:
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        api_key: str,
+        base_url: str,
+        batch_check_size: int,
+        max_retries: int,
+        base_delay_seconds: float,
+        cap_delay_seconds: float,
+    ) -> None:
+        self.session = session
+        self.api_key = api_key
+        self.base_url = base_url
+        self.batch_check_size = batch_check_size
+        self.max_retries = max_retries
+        self.base_delay_seconds = base_delay_seconds
+        self.cap_delay_seconds = cap_delay_seconds
+
+    async def fetch(self, candidates: Sequence[str]) -> list[DomainListing]:
+        if not candidates:
+            return []
+        deduped = list(dict.fromkeys(candidates))
+        chunks = [
+            deduped[idx : idx + self.batch_check_size]
+            for idx in range(0, len(deduped), self.batch_check_size)
+        ]
+        tasks = [self._check_batch(batch) for batch in chunks if batch]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        listings: list[DomainListing] = []
+        for result in results:
+            if isinstance(result, list):
+                listings.extend(result)
+            elif isinstance(result, Exception):
+                LOGGER.warning("Dynadot lookup failed: %s", result)
+        return listings
+
+    async def _check_batch(self, domains: Sequence[str]) -> list[DomainListing]:
+        params = {
+            "key": self.api_key,
+            "command": "search",
+            "domain": ",".join(domains),
+            "response": "json",
+        }
+
+        async def op() -> list[DomainListing]:
+            async with self.session.get(self.base_url, params=params) as response:
+                if response.status == 429:
+                    raise RetryableAPIError(
+                        "Dynadot rate limited",
+                        parse_retry_after_seconds(response.headers.get("Retry-After")),
+                    )
+                if response.status >= 500:
+                    raise RetryableAPIError(f"Dynadot server error: {response.status}")
+                if response.status != 200:
+                    body = await response.text()
+                    raise RuntimeError(
+                        f"Dynadot API status={response.status} body={body[:300]}"
+                    )
+
+                payload = await response.json(content_type=None)
+                rows = payload.get("SearchResponse", {}).get("SearchResults", [])
+                if not isinstance(rows, list):
+                    rows = []
+                listings: list[DomainListing] = []
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    domain = (row.get("DomainName") or row.get("domain") or "").strip().lower()
+                    if not domain:
+                        continue
+                    available = row.get("Available")
+                    if isinstance(available, str):
+                        available = available.lower() in {"true", "yes", "1"}
+                    if available is False:
+                        continue
+                    price_usd = None
+                    for key in ("Price", "RegistrationPrice", "price"):
+                        raw = row.get(key)
+                        if raw is None:
+                            continue
+                        try:
+                            price_usd = float(raw)
+                            break
+                        except (TypeError, ValueError):
+                            continue
+                    listings.append(
+                        DomainListing(
+                            domain=domain,
+                            source="Dynadot",
+                            buy_url=f"https://www.dynadot.com/domain/search.html?domain={domain}",
+                            price_usd=price_usd,
+                            currency="USD",
+                            is_drop=True,
+                        )
+                    )
+                return listings
+
+        return await with_exponential_backoff(
+            op,
+            op_name=f"Dynadot batch check ({len(domains)} domains)",
+            base_delay_seconds=self.base_delay_seconds,
+            cap_delay_seconds=self.cap_delay_seconds,
+            max_retries=self.max_retries,
         )
 
 
@@ -821,60 +1003,61 @@ def is_allowed_listing(listing: DomainListing, cfg: WatcherConfig) -> bool:
     return True
 
 
-def build_hot_deal_reason(listing: DomainListing, cfg: WatcherConfig) -> Optional[str]:
-    if listing.price_usd is None:
-        return None
+def evaluate_domain(listing: DomainListing, cfg: WatcherConfig) -> ArbitrageEvaluation:
     premium_kw = keyword_hit(listing.sld, cfg.keywords)
-    if premium_kw and listing.price_usd <= cfg.standard_reg_max:
-        return f"Premium keyword '{premium_kw}' at near-reg fee"
-    if listing.price_usd <= cfg.standard_reg_max * (1 - cfg.discount_trigger_pct / 100):
-        return "Massive discount detected"
-    return None
+    tld_weight = cfg.tld_value_weights.get(listing.tld, 0.95)
+    intrinsic = cfg.base_intrinsic_value_usd * tld_weight
+    if premium_kw:
+        intrinsic += cfg.keyword_value_usd
+    shortness = max(0, cfg.max_sld_len - len(listing.sld))
+    intrinsic += min(cfg.max_short_name_bonus_usd, shortness * cfg.short_name_bonus_per_char_usd)
+    if listing.is_aftermarket:
+        intrinsic *= cfg.aftermarket_intrinsic_multiplier
+
+    if listing.price_usd is None or listing.price_usd <= 0:
+        return ArbitrageEvaluation(
+            intrinsic_value_usd=round(intrinsic, 2),
+            arbitrage_gap_usd=0.0,
+            arbitrage_ratio=0.0,
+            premium_keyword=premium_kw,
+            hot_deal_reason=None,
+        )
+
+    gap = intrinsic - listing.price_usd
+    ratio = intrinsic / listing.price_usd
+    discount_floor_price = cfg.standard_reg_max * (1 - cfg.discount_trigger_fraction)
+    is_hot = gap >= cfg.arbitrage_min_gap_usd and ratio >= cfg.arbitrage_min_ratio
+    if not is_hot and premium_kw and listing.price_usd <= discount_floor_price:
+        is_hot = True
+    reason = None
+    if is_hot:
+        reason = (
+            f"Arbitrage gap ${gap:.2f} "
+            f"(intrinsic ${intrinsic:.2f} vs ask ${listing.price_usd:.2f}, x{ratio:.2f})"
+        )
+    return ArbitrageEvaluation(
+        intrinsic_value_usd=round(intrinsic, 2),
+        arbitrage_gap_usd=round(gap, 2),
+        arbitrage_ratio=round(ratio, 2),
+        premium_keyword=premium_kw,
+        hot_deal_reason=reason,
+    )
 
 
-def compute_confidence_score(
-    listing: DomainListing, cfg: WatcherConfig, keyword: Optional[str] = None
-) -> int:
-    score = 0
-
-    keyword = keyword or listing.keyword_match or keyword_hit(listing.sld, cfg.keywords)
-    if keyword:
-        kw_strength = min(KEYWORD_COMPONENT_CAP, KEYWORD_BASE_SCORE + len(keyword) * KEYWORD_LEN_MULTIPLIER)
-        if listing.sld.startswith(keyword) or listing.sld.endswith(keyword):
-            kw_strength += KEYWORD_EDGE_BONUS
-        score += min(KEYWORD_SCORE_MAX, kw_strength)
-
-    sld_len = len(listing.sld)
-    if sld_len <= SHORT_LENGTH_UPPER_BOUND:
-        length_score = max(0, LENGTH_COMPONENT_MAX - abs(sld_len - OPTIMAL_SLD_LENGTH) * SHORT_NAME_PENALTY)
-    else:
-        length_score = max(0, LONG_NAME_BASE - (sld_len - SHORT_LENGTH_UPPER_BOUND) * LONG_NAME_PENALTY)
-    score += min(LENGTH_COMPONENT_MAX, length_score)
-
-    if listing.price_usd is not None and listing.price_usd >= 0:
-        # Keep a fixed low floor and a dynamic baseline to avoid over-scoring tiny absolute deltas
-        # when standard registrar pricing is already very low.
-        if listing.price_usd <= max(MIN_ULTRA_DISCOUNT_PRICE, cfg.standard_reg_max * ULTRA_DISCOUNT_MULTIPLIER):
-            score += ULTRA_DISCOUNT_SCORE
-        elif listing.price_usd <= cfg.standard_reg_max * (1 - cfg.discount_trigger_pct / 100):
-            score += DEEP_DISCOUNT_SCORE
-        elif listing.price_usd <= cfg.standard_reg_max:
-            score += REGULAR_DISCOUNT_SCORE
-
-    if listing.is_drop:
-        score += DROP_SIGNAL_SCORE
-    if listing.is_expired:
-        score += EXPIRED_SIGNAL_SCORE
-
-    return max(0, min(100, int(score)))
-
-
-def get_poll_interval_seconds(cfg: WatcherConfig, now_utc: Optional[datetime] = None) -> int:
-    now = now_utc or datetime.now(timezone.utc)
-    hour = now.hour
-    if hour in cfg.turbo_hours_utc:
-        return max(3, cfg.turbo_poll_seconds)
-    return max(5, cfg.eco_poll_seconds)
+def distribute_candidates_across_providers(
+    candidates: Sequence[str],
+    provider_names: Sequence[str],
+    cycle: int,
+) -> dict[str, list[str]]:
+    if not candidates or not provider_names:
+        return {}
+    offset = cycle % len(provider_names)
+    rotated = list(provider_names[offset:]) + list(provider_names[:offset])
+    shards: dict[str, list[str]] = {name: [] for name in rotated}
+    for idx, domain in enumerate(candidates):
+        provider_name = rotated[idx % len(rotated)]
+        shards[provider_name].append(domain)
+    return shards
 
 
 def format_alert(listing: DomainListing, hot_reason: Optional[str]) -> str:
@@ -885,9 +1068,6 @@ def format_alert(listing: DomainListing, hot_reason: Optional[str]) -> str:
         price = "N/A"
     else:
         price = escape_md_v2(f"${listing.price_usd:.2f} {listing.currency}")
-    confidence = escape_md_v2(
-        f"{listing.confidence_score if listing.confidence_score is not None else 0}/100"
-    )
 
     headline = "🔥 *HOT DEAL*" if hot_reason else "🚨 *Domain Opportunity*"
     deal_line = (
@@ -899,6 +1079,8 @@ def format_alert(listing: DomainListing, hot_reason: Optional[str]) -> str:
         tags.append("drop")
     if listing.is_expired:
         tags.append("expired")
+    if listing.is_aftermarket:
+        tags.append("aftermarket")
     tag_text = escape_md_v2(", ".join(tags) if tags else "market")
 
     return (
@@ -906,7 +1088,6 @@ def format_alert(listing: DomainListing, hot_reason: Optional[str]) -> str:
         f"🌐 *Domain:* `{domain}`\n"
         f"🧩 *TLD:* `{tld}`\n"
         f"💰 *Price:* {price}\n"
-        f"🎯 *Confidence:* `{confidence}`\n"
         f"🏷 *Type:* {tag_text}\n"
         f"🏪 *Source:* {source}"
         f"{deal_line}"
@@ -928,9 +1109,13 @@ def build_candidates(cfg: WatcherConfig) -> list[str]:
     return list(domains)
 
 
-async def emit_listing_alert(app: Application, chat_id: int, listing: DomainListing, cfg: WatcherConfig) -> None:
-    hot_reason = build_hot_deal_reason(listing, cfg)
-    message = format_alert(listing, hot_reason)
+async def emit_listing_alert(
+    app: Application,
+    chat_id: int,
+    listing: DomainListing,
+    evaluation: ArbitrageEvaluation,
+) -> None:
+    message = format_alert(listing, evaluation.hot_deal_reason)
     keyboard = InlineKeyboardMarkup(
         [
             [InlineKeyboardButton(f"🛒 Buy on {listing.source}", url=listing.buy_url)],
@@ -949,6 +1134,7 @@ async def emit_listing_alert(app: Application, chat_id: int, listing: DomainList
 async def watch_events(app: Application, chat_id: int) -> None:
     cfg = WatcherConfig.from_env()
     store = AlertStore(cfg.db_path)
+    check_cache = DomainCheckCache(cfg.check_cache_ttl_seconds)
     timeout = aiohttp.ClientTimeout(total=cfg.http_timeout_seconds)
 
     go_key = os.getenv("GODADDY_API_KEY", "").strip()
@@ -969,11 +1155,22 @@ async def watch_events(app: Application, chat_id: int) -> None:
     namecom_username = os.getenv("NAMECOM_USERNAME", "").strip()
     namecom_token = os.getenv("NAMECOM_TOKEN", "").strip()
     have_namecom = bool(namecom_username and namecom_token)
+    have_dynadot = bool(cfg.dynadot_api_key)
+
+    def get_poll_seconds() -> int:
+        if not cfg.eco_mode_enabled:
+            return cfg.poll_seconds
+        utc_hour = datetime.now(timezone.utc).hour
+        if utc_hour in cfg.turbo_hours_utc:
+            return max(cfg.min_poll_seconds, cfg.turbo_poll_seconds)
+        if utc_hour in cfg.eco_dead_hours_utc:
+            return max(cfg.poll_seconds, cfg.eco_poll_seconds)
+        return cfg.poll_seconds
 
     LOGGER.info("Starting domain watcher with tlds=%s, max_sld_len=%s", cfg.allowed_tlds, cfg.max_sld_len)
-    if not have_godaddy and not have_namecheap and not have_namecom:
+    if not have_godaddy and not have_namecheap and not have_namecom and not have_dynadot:
         LOGGER.warning(
-            "No official registrar API configured. Set GoDaddy, Namecheap, and/or Name.com credentials."
+            "No official registrar API configured. Set GoDaddy, Namecheap, Name.com, and/or Dynadot credentials."
         )
     if cfg.expired_domains_url and not cfg.allow_unofficial_scraping:
         LOGGER.warning(
@@ -991,7 +1188,6 @@ async def watch_events(app: Application, chat_id: int) -> None:
                 cfg.backoff_base_seconds,
                 cfg.backoff_cap_seconds,
                 cfg.per_source_concurrency,
-                cfg.negative_cache_ttl_seconds,
             )
             if have_godaddy
             else None
@@ -1008,7 +1204,6 @@ async def watch_events(app: Application, chat_id: int) -> None:
                 cfg.max_retries,
                 cfg.backoff_base_seconds,
                 cfg.backoff_cap_seconds,
-                cfg.negative_cache_ttl_seconds,
             )
             if have_namecheap
             else None
@@ -1023,9 +1218,21 @@ async def watch_events(app: Application, chat_id: int) -> None:
                 cfg.max_retries,
                 cfg.backoff_base_seconds,
                 cfg.backoff_cap_seconds,
-                cfg.negative_cache_ttl_seconds,
             )
             if have_namecom
+            else None
+        )
+        dynadot_source = (
+            DynadotAvailabilitySource(
+                session,
+                cfg.dynadot_api_key,
+                cfg.dynadot_base_url,
+                cfg.batch_check_size,
+                cfg.max_retries,
+                cfg.backoff_base_seconds,
+                cfg.backoff_cap_seconds,
+            )
+            if have_dynadot
             else None
         )
         exp_source = (
@@ -1033,53 +1240,126 @@ async def watch_events(app: Application, chat_id: int) -> None:
             if cfg.expired_domains_url and cfg.allow_unofficial_scraping
             else None
         )
+        aftermarket_sources: list[AftermarketSource] = []
+        if cfg.aftermarket_enabled:
+            if cfg.namecheap_marketplace_url:
+                aftermarket_sources.append(
+                    AftermarketSource(
+                        session,
+                        "Namecheap Marketplace",
+                        cfg.namecheap_marketplace_url,
+                        cfg.allowed_tlds,
+                        cfg.aftermarket_max_listings_per_source,
+                        cfg.namecheap_marketplace_selectors,
+                    )
+                )
+            if cfg.dynadot_aftermarket_url:
+                aftermarket_sources.append(
+                    AftermarketSource(
+                        session,
+                        "Dynadot Aftermarket",
+                        cfg.dynadot_aftermarket_url,
+                        cfg.allowed_tlds,
+                        cfg.aftermarket_max_listings_per_source,
+                        cfg.dynadot_aftermarket_selectors,
+                    )
+                )
+            if cfg.godaddy_closeouts_url:
+                aftermarket_sources.append(
+                    AftermarketSource(
+                        session,
+                        "GoDaddy Closeouts",
+                        cfg.godaddy_closeouts_url,
+                        cfg.allowed_tlds,
+                        cfg.aftermarket_max_listings_per_source,
+                        cfg.godaddy_closeouts_selectors,
+                    )
+                )
 
         try:
+            cycle = 0
             while True:
                 listings: list[DomainListing] = []
                 tasks: list[asyncio.Task] = []
-                candidates_for_cycle = build_candidates(cfg)
+                check_cache.prune()
 
+                provider_sources: list[tuple[str, object]] = []
                 if go_source:
-                    tasks.append(asyncio.create_task(go_source.fetch(list(candidates_for_cycle))))
+                    provider_sources.append(("GoDaddy", go_source))
                 if namecheap_source:
-                    tasks.append(asyncio.create_task(namecheap_source.fetch(list(candidates_for_cycle))))
+                    provider_sources.append(("Namecheap", namecheap_source))
                 if namecom_source:
-                    tasks.append(asyncio.create_task(namecom_source.fetch(list(candidates_for_cycle))))
+                    provider_sources.append(("Name.com", namecom_source))
+                if dynadot_source:
+                    provider_sources.append(("Dynadot", dynadot_source))
+
+                if provider_sources:
+                    candidates = [d for d in build_candidates(cfg) if check_cache.should_check(d)]
+                    if candidates:
+                        provider_names = [name for name, _ in provider_sources]
+                        shards = distribute_candidates_across_providers(candidates, provider_names, cycle)
+                        for domain in candidates:
+                            check_cache.mark_checked(domain)
+                        source_map = {name: src for name, src in provider_sources}
+                        for provider_name, provider_candidates in shards.items():
+                            if provider_candidates:
+                                tasks.append(
+                                    asyncio.create_task(source_map[provider_name].fetch(provider_candidates))
+                                )
                 if exp_source:
                     tasks.append(asyncio.create_task(exp_source.fetch()))
+                for source in aftermarket_sources:
+                    tasks.append(asyncio.create_task(source.fetch()))
 
                 if tasks:
                     results = await asyncio.gather(*tasks, return_exceptions=True)
                     for result in results:
                         if isinstance(result, list):
-                            listings.extend(result)
+                            if result and all(isinstance(item, dict) for item in result):
+                                normalized: list[DomainListing] = []
+                                for row in result:
+                                    try:
+                                        domain = str(row.get("domain", "")).strip().lower()
+                                        source = str(row.get("source", "Aftermarket")).strip() or "Aftermarket"
+                                        buy_url = str(row.get("buy_url", "")).strip() or cfg.fallback_marketplace_url
+                                        raw_price = row.get("price_usd")
+                                        price_usd = float(raw_price) if raw_price is not None else None
+                                        currency = str(row.get("currency", "USD")).strip() or "USD"
+                                        normalized.append(
+                                            DomainListing(
+                                                domain=domain,
+                                                source=source,
+                                                buy_url=buy_url,
+                                                price_usd=price_usd,
+                                                currency=currency,
+                                                is_aftermarket=bool(row.get("is_aftermarket", False)),
+                                            )
+                                        )
+                                    except (TypeError, ValueError, AttributeError):
+                                        continue
+                                listings.extend(normalized)
+                            else:
+                                listings.extend(result)
                         elif isinstance(result, Exception):
                             LOGGER.warning("Watcher source error: %s", result)
 
                 for listing in listings:
                     if not is_allowed_listing(listing, cfg):
                         continue
-
-                    kw = keyword_hit(listing.sld, cfg.keywords)
-                    if not kw:
+                    evaluation = evaluate_domain(listing, cfg)
+                    if evaluation.premium_keyword:
+                        listing = replace(listing, keyword_match=evaluation.premium_keyword)
+                    if not listing.keyword_match and not evaluation.hot_deal_reason:
                         continue
-                    score = compute_confidence_score(
-                        replace(listing, keyword_match=kw),
-                        cfg,
-                        keyword=kw,
-                    )
-                    listing = replace(listing, keyword_match=kw, confidence_score=score)
 
                     if store.has_alerted(listing.domain):
                         continue
 
-                    await emit_listing_alert(app, chat_id, listing, cfg)
+                    await emit_listing_alert(app, chat_id, listing, evaluation)
                     store.mark_alerted(listing.domain, listing.source)
 
-                poll_seconds = get_poll_interval_seconds(cfg)
-                LOGGER.debug("Watcher sleeping for %ss", poll_seconds)
-                await asyncio.sleep(poll_seconds)
+                cycle += 1
+                await asyncio.sleep(get_poll_seconds())
         except asyncio.CancelledError:
             LOGGER.info("Domain watcher cancelled.")
             raise
