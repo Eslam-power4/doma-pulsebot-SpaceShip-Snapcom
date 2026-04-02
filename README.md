@@ -114,6 +114,24 @@ ATOM_PARTNERSHIP_API_KEY=
 ATOM_APPRAISAL_API_URL=
 ATOM_APPRAISAL_API_KEY=
 
+# Anti-ban settings
+# Optional proxy; if unset, local machine IP is used
+PROXY_URL=
+# Always-on humanized delay range (seconds) between outbound API calls
+HUMAN_DELAY_MIN_SECONDS=0.8
+HUMAN_DELAY_MAX_SECONDS=2.5
+
+# Optional advanced valuation modules (bonus scoring)
+SEO_API_URL=
+SEO_API_KEY=
+SEARCH_VOL_API_URL=
+SEARCH_VOL_API_KEY=
+NAMEBIO_API_URL=
+NAMEBIO_API_KEY=
+SEO_BONUS_POINTS=12
+SEARCH_VOL_BONUS_POINTS=10
+NAMEBIO_BONUS_POINTS=15
+
 # Watcher filters/tuning
 ALLOWED_TLDS=.dev,.app,.cloud
 WATCHER_POLL_SECONDS=30

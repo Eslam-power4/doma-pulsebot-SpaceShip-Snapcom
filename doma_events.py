@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import random
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -73,6 +74,18 @@ class WatcherConfig:
     atom_partnership_api_key: str = ""
     atom_appraisal_url: str = ""
     atom_appraisal_api_key: str = ""
+    proxy_url: str = ""
+    human_delay_min_seconds: float = 0.8
+    human_delay_max_seconds: float = 2.5
+    seo_api_url: str = ""
+    seo_api_key: str = ""
+    search_volume_api_url: str = ""
+    search_volume_api_key: str = ""
+    namebio_api_url: str = ""
+    namebio_api_key: str = ""
+    seo_bonus_points: float = 12.0
+    search_volume_bonus_points: float = 10.0
+    historical_sales_bonus_points: float = 15.0
     high_value_keywords: tuple[str, ...] = (
         "ai",
         "app",
@@ -112,6 +125,18 @@ class WatcherConfig:
             atom_partnership_api_key=os.getenv("ATOM_PARTNERSHIP_API_KEY", "").strip(),
             atom_appraisal_url=os.getenv("ATOM_APPRAISAL_API_URL", "").strip(),
             atom_appraisal_api_key=os.getenv("ATOM_APPRAISAL_API_KEY", "").strip(),
+            proxy_url=os.getenv("PROXY_URL", "").strip(),
+            human_delay_min_seconds=float(os.getenv("HUMAN_DELAY_MIN_SECONDS", "0.8")),
+            human_delay_max_seconds=float(os.getenv("HUMAN_DELAY_MAX_SECONDS", "2.5")),
+            seo_api_url=os.getenv("SEO_API_URL", "").strip(),
+            seo_api_key=os.getenv("SEO_API_KEY", "").strip(),
+            search_volume_api_url=os.getenv("SEARCH_VOL_API_URL", "").strip(),
+            search_volume_api_key=os.getenv("SEARCH_VOL_API_KEY", "").strip(),
+            namebio_api_url=os.getenv("NAMEBIO_API_URL", "").strip(),
+            namebio_api_key=os.getenv("NAMEBIO_API_KEY", "").strip(),
+            seo_bonus_points=float(os.getenv("SEO_BONUS_POINTS", "12")),
+            search_volume_bonus_points=float(os.getenv("SEARCH_VOL_BONUS_POINTS", "10")),
+            historical_sales_bonus_points=float(os.getenv("NAMEBIO_BONUS_POINTS", "15")),
         )
 
 
@@ -259,14 +284,21 @@ class AtomClient:
             headers["X-API-Key"] = api_key
         return headers
 
+    async def _humanized_delay(self) -> None:
+        low = min(self.cfg.human_delay_min_seconds, self.cfg.human_delay_max_seconds)
+        high = max(self.cfg.human_delay_min_seconds, self.cfg.human_delay_max_seconds)
+        await asyncio.sleep(random.uniform(low, high))
+
     async def fetch_partnership_domains(self) -> list[DomainOpportunity]:
         if not self.cfg.atom_partnership_url:
             LOGGER.warning("ATOM_PARTNERSHIP_API_URL is not set; no domains fetched.")
             return []
 
+        await self._humanized_delay()
         async with self.session.get(
             self.cfg.atom_partnership_url,
             headers=self._headers(self.cfg.atom_partnership_api_key),
+            proxy=self.cfg.proxy_url or None,
         ) as response:
             body = await response.text()
             if response.status != 200:
@@ -331,10 +363,12 @@ class AtomClient:
             raise AppraisalUnavailableError("ATOM_APPRAISAL_API_URL is not set")
 
         payload = {"domain": domain}
+        await self._humanized_delay()
         async with self.session.post(
             self.cfg.atom_appraisal_url,
             headers=self._headers(self.cfg.atom_appraisal_api_key),
             json=payload,
+            proxy=self.cfg.proxy_url or None,
         ) as response:
             body_text = await response.text()
             lowered = body_text.lower()
@@ -377,6 +411,125 @@ class AtomClient:
 
         return float(value)
 
+    async def seo_backlinks_bonus(self, domain: str) -> tuple[float, str]:
+        if not os.getenv("SEO_API_KEY", "").strip():
+            LOGGER.debug("Skipping SEO / Backlinks Check - No API Key")
+            return 0.0, "skipped_no_key"
+        if not self.cfg.seo_api_url:
+            LOGGER.debug("Skipping SEO / Backlinks Check - No API URL")
+            return 0.0, "skipped_no_url"
+
+        try:
+            await self._humanized_delay()
+            async with self.session.get(
+                self.cfg.seo_api_url,
+                headers=self._headers(self.cfg.seo_api_key),
+                params={"domain": domain},
+                proxy=self.cfg.proxy_url or None,
+            ) as response:
+                if response.status != 200:
+                    LOGGER.debug(
+                        "Skipping SEO / Backlinks Check - API status=%s",
+                        response.status,
+                    )
+                    return 0.0, f"status_{response.status}"
+                data = await response.json(content_type=None)
+        except Exception as exc:
+            LOGGER.debug("Skipping SEO / Backlinks Check - %s", exc)
+            return 0.0, "request_failed"
+
+        score = parse_float(
+            data.get("authority")
+            if isinstance(data, dict)
+            else None
+        ) or parse_float(
+            data.get("backlinks")
+            if isinstance(data, dict)
+            else None
+        )
+        if score and score > 0:
+            return self.cfg.seo_bonus_points, "seo_signal_detected"
+        return 0.0, "no_signal"
+
+    async def search_volume_bonus(self, domain: str) -> tuple[float, str]:
+        if not os.getenv("SEARCH_VOL_API_KEY", "").strip():
+            LOGGER.debug("Skipping Search Volume Check - No API Key")
+            return 0.0, "skipped_no_key"
+        if not self.cfg.search_volume_api_url:
+            LOGGER.debug("Skipping Search Volume Check - No API URL")
+            return 0.0, "skipped_no_url"
+
+        keyword = domain.split(".", 1)[0]
+        try:
+            await self._humanized_delay()
+            async with self.session.get(
+                self.cfg.search_volume_api_url,
+                headers=self._headers(self.cfg.search_volume_api_key),
+                params={"keyword": keyword},
+                proxy=self.cfg.proxy_url or None,
+            ) as response:
+                if response.status != 200:
+                    LOGGER.debug(
+                        "Skipping Search Volume Check - API status=%s",
+                        response.status,
+                    )
+                    return 0.0, f"status_{response.status}"
+                data = await response.json(content_type=None)
+        except Exception as exc:
+            LOGGER.debug("Skipping Search Volume Check - %s", exc)
+            return 0.0, "request_failed"
+
+        volume = parse_float(
+            data.get("search_volume")
+            if isinstance(data, dict)
+            else None
+        ) or parse_float(
+            data.get("volume")
+            if isinstance(data, dict)
+            else None
+        )
+        if volume and volume > 0:
+            return self.cfg.search_volume_bonus_points, "volume_signal_detected"
+        return 0.0, "no_signal"
+
+    async def historical_sales_bonus(self, domain: str) -> tuple[float, str]:
+        if not os.getenv("NAMEBIO_API_KEY", "").strip():
+            LOGGER.debug("Skipping Historical Sales Check - No API Key")
+            return 0.0, "skipped_no_key"
+        if not self.cfg.namebio_api_url:
+            LOGGER.debug("Skipping Historical Sales Check - No API URL")
+            return 0.0, "skipped_no_url"
+
+        keyword = domain.split(".", 1)[0]
+        try:
+            await self._humanized_delay()
+            async with self.session.get(
+                self.cfg.namebio_api_url,
+                headers=self._headers(self.cfg.namebio_api_key),
+                params={"keyword": keyword},
+                proxy=self.cfg.proxy_url or None,
+            ) as response:
+                if response.status != 200:
+                    LOGGER.debug(
+                        "Skipping Historical Sales Check - API status=%s",
+                        response.status,
+                    )
+                    return 0.0, f"status_{response.status}"
+                data = await response.json(content_type=None)
+        except Exception as exc:
+            LOGGER.debug("Skipping Historical Sales Check - %s", exc)
+            return 0.0, "request_failed"
+
+        has_sales = False
+        if isinstance(data, dict):
+            sales_count = parse_float(data.get("sales_count") or data.get("count"))
+            has_sales = bool(sales_count and sales_count > 0)
+            if not has_sales and isinstance(data.get("sales"), list):
+                has_sales = len(data["sales"]) > 0
+        if has_sales:
+            return self.cfg.historical_sales_bonus_points, "historical_sales_detected"
+        return 0.0, "no_signal"
+
 
 async def evaluate_opportunity(
     client: AtomClient,
@@ -398,6 +551,28 @@ async def evaluate_opportunity(
             opportunity.domain,
             estimated,
             exc,
+        )
+
+    bonus_total = 0.0
+    bonus_parts: list[str] = []
+    for check_name, bonus_fn in (
+        ("seo", client.seo_backlinks_bonus),
+        ("search_volume", client.search_volume_bonus),
+        ("historical_sales", client.historical_sales_bonus),
+    ):
+        bonus, detail = await bonus_fn(opportunity.domain)
+        if bonus > 0:
+            bonus_total += bonus
+            bonus_parts.append(f"{check_name}=+{bonus:.2f}({detail})")
+
+    if bonus_total > 0:
+        estimated += bonus_total
+        reason = f"{reason}; bonus_total=+{bonus_total:.2f}; " + ", ".join(bonus_parts)
+        LOGGER.info(
+            "Applied optional bonuses domain=%s total_bonus=$%.2f details=%s",
+            opportunity.domain,
+            bonus_total,
+            "; ".join(bonus_parts),
         )
 
     margin_usd = estimated - opportunity.ask_price_usd
@@ -463,10 +638,13 @@ async def watch_events(app: Application, chat_id: int) -> None:
     timeout = aiohttp.ClientTimeout(total=cfg.request_timeout_seconds)
 
     LOGGER.info(
-        "Starting Atom watcher (poll=%ss, partnership=%s, appraisal=%s)",
+        "Starting Atom watcher (poll=%ss, partnership=%s, appraisal=%s, proxy=%s, delay=%.2f-%.2fs)",
         cfg.poll_seconds,
         bool(cfg.atom_partnership_url),
         bool(cfg.atom_appraisal_url),
+        bool(cfg.proxy_url),
+        min(cfg.human_delay_min_seconds, cfg.human_delay_max_seconds),
+        max(cfg.human_delay_min_seconds, cfg.human_delay_max_seconds),
     )
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
