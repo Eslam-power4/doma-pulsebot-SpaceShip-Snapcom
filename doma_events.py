@@ -14,9 +14,16 @@ from telegram.ext import Application
 
 LOGGER = logging.getLogger(__name__)
 SPECIAL_CHARS = r"_*[]()~`>#+-=|{}.!"
+APPRAISAL_FALLBACK_TOKENS = (
+    "out of credits",
+    "rate limit exceeded",
+    "quota exhausted",
+    "credits exhausted",
+    "insufficient credits",
+)
 
 
-class AppraisalUnavailableError(RuntimeError):
+class AppraisalUnavailableError(Exception):
     """Raised when Atom AI appraisal cannot be used and fallback is required."""
 
 
@@ -158,13 +165,34 @@ def parse_float(value: Any) -> Optional[float]:
     text = value.strip()
     if not text:
         return None
-    match = re.search(r"-?[0-9]+(?:\.[0-9]+)?", text.replace(",", ""))
+    if re.search(r"[-−]\s*[0-9]", text):
+        return None
+    match = re.search(r"[0-9]+(?:\.[0-9]+)?", text.replace(",", ""))
     if not match:
         return None
     try:
-        return float(match.group(0))
+        parsed = float(match.group(0))
+        if parsed < 0:
+            return None
+        return parsed
     except ValueError:
         return None
+
+
+def extract_error_message(data: dict[str, Any]) -> Optional[str]:
+    """Return the first meaningful API error text from common response keys."""
+    return (
+        str(
+            data.get("message")
+            or data.get("error")
+            or data.get("detail")
+            or data.get("error_description")
+            or data.get("error_message")
+            or data.get("description")
+            or ""
+        ).strip()
+        or None
+    )
 
 
 def extract_rows(payload: Any) -> list[dict[str, Any]]:
@@ -314,14 +342,7 @@ class AtomClient:
             if response.status != 200:
                 if any(
                     token in lowered
-                    for token in (
-                        "out of credits",
-                        "rate limit exceeded",
-                        "quota exhausted",
-                        "quota",
-                        "credits",
-                        "rate limit",
-                    )
+                    for token in APPRAISAL_FALLBACK_TOKENS
                 ) or response.status in {402, 403, 429}:
                     raise AppraisalUnavailableError(
                         f"AI appraisal unavailable (status={response.status}): {body_text[:240]}"
@@ -347,7 +368,7 @@ class AtomClient:
                 or parse_float(data.get("estimate"))
             )
             if value is None:
-                details = data.get("message") or data.get("error") or data.get("detail")
+                details = extract_error_message(data)
                 if details:
                     raise AppraisalUnavailableError(f"AI appraisal did not provide value: {details}")
 
@@ -370,7 +391,7 @@ async def evaluate_opportunity(
         LOGGER.info("Valuation method=AI domain=%s estimated=$%.2f", opportunity.domain, estimated)
     except AppraisalUnavailableError as exc:
         estimated, rule_reason = score_with_internal_rules(opportunity.domain, cfg)
-        method = "fallback_manual"
+        method = "rule_based_fallback"
         reason = f"{rule_reason}; fallback_reason={exc}"
         LOGGER.warning(
             "Valuation method=FALLBACK domain=%s estimated=$%.2f reason=%s",
@@ -404,12 +425,12 @@ def format_alert(opportunity: DomainOpportunity, valuation: ValuationResult) -> 
     ratio = escape_md_v2(f"x{valuation.margin_ratio:.2f}")
 
     return (
-        r"🔥 *High\-Margin Domain Deal*\n"
+        "🔥 *High\\-Margin Domain Deal*\n"
         f"🌐 *Domain:* `{domain}`\n"
         f"🏪 *Source:* {source}\n"
         f"💵 *Asking Price:* {ask}\n"
         f"🧠 *Estimated Value:* {estimate}\n"
-        fr"📈 *Gap:* {gap} \({ratio}\)\n"
+        f"📈 *Gap:* {gap} \\({ratio}\\)\n"
         f"⚙️ *Valuation Method:* `{method}`\n"
         f"🔗 *Listing:* {listing_url}"
     )
