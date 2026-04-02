@@ -84,6 +84,7 @@ class WatcherConfig:
     min_margin_usd: float = 20.0
     min_margin_ratio: float = 1.8
     allowed_tlds: set[str] = field(default_factory=lambda: {".dev", ".app", ".cloud"})
+    high_value_keywords: set[str] = field(default_factory=lambda: {"ai", "tech", "finance"})
     keyword_value_usd: float = 22.0
     atom_partnership_url: str = ""
     atom_api_key: str = ""
@@ -111,6 +112,8 @@ class WatcherConfig:
         partnership_url = os.getenv("ATOM_PARTNERSHIP_API_URL", "").strip()
         appraisal_url = os.getenv("ATOM_APPRAISAL_API_URL", "").strip()
         trademark_url = os.getenv("ATOM_TRADEMARK_API_URL", "").strip()
+        raw_keywords = os.getenv("HIGH_VALUE_KEYWORDS", "ai,tech,finance")
+        high_value_keywords = {kw.strip().lower() for kw in raw_keywords.split(",") if kw.strip()}
         return cls(
             poll_seconds=int(os.getenv("WATCHER_POLL_SECONDS", "30")),
             eco_poll_seconds=int(os.getenv("ECO_POLL_SECONDS", "120")),
@@ -134,6 +137,7 @@ class WatcherConfig:
             min_margin_usd=float(os.getenv("ARBITRAGE_MIN_GAP_USD", "20")),
             min_margin_ratio=float(os.getenv("ARBITRAGE_MIN_RATIO", "1.8")),
             allowed_tlds=allowed_tlds or {".dev", ".app", ".cloud"},
+            high_value_keywords=high_value_keywords or {"ai", "tech", "finance"},
             keyword_value_usd=float(os.getenv("KEYWORD_VALUE_USD", "22")),
             atom_partnership_url=partnership_url,
             atom_api_key=os.getenv("ATOM_API_KEY", "").strip(),
@@ -198,28 +202,30 @@ class AlertStore:
         self.conn.execute(
             """
             CREATE TABLE IF NOT EXISTS sent_alerts (
-                domain TEXT PRIMARY KEY,
+                chat_id INTEGER NOT NULL,
+                domain TEXT NOT NULL,
                 source TEXT NOT NULL,
-                first_seen_utc TEXT NOT NULL
+                first_seen_utc TEXT NOT NULL,
+                PRIMARY KEY (chat_id, domain)
             )
             """
         )
         self.conn.commit()
 
-    def has_alerted(self, domain: str) -> bool:
+    def has_alerted(self, chat_id: int, domain: str) -> bool:
         row = self.conn.execute(
-            "SELECT 1 FROM sent_alerts WHERE domain = ?",
-            (domain.lower(),),
+            "SELECT 1 FROM sent_alerts WHERE chat_id = ? AND domain = ?",
+            (chat_id, domain.lower()),
         ).fetchone()
         return row is not None
 
-    def mark_alerted(self, domain: str, source: str) -> None:
+    def mark_alerted(self, chat_id: int, domain: str, source: str) -> None:
         self.conn.execute(
             """
-            INSERT OR IGNORE INTO sent_alerts(domain, source, first_seen_utc)
-            VALUES (?, ?, ?)
+            INSERT OR IGNORE INTO sent_alerts(chat_id, domain, source, first_seen_utc)
+            VALUES (?, ?, ?, ?)
             """,
-            (domain.lower(), source, datetime.now(timezone.utc).isoformat()),
+            (chat_id, domain.lower(), source, datetime.now(timezone.utc).isoformat()),
         )
         self.conn.commit()
 
@@ -529,8 +535,8 @@ class AtomClient:
         try:
             payload = await self._request_json_with_retry(
                 "GET",
-                self._partnership_urls,
-                headers=self._headers(self.cfg.atom_partnership_api_key),
+                self._partnership_url,
+                headers=self._headers(self.cfg.atom_api_key),
                 context_label="Partnership API",
             )
         except AtomCircuitOpenError as exc:
@@ -766,7 +772,6 @@ def format_alert(opportunity: DomainOpportunity, valuation: ValuationResult) -> 
     domain = escape_md_v2(opportunity.domain)
     method = escape_md_v2(valuation.method)
     source = escape_md_v2(opportunity.source)
-    listing_url = escape_md_v2(opportunity.listing_url)
     ask = escape_md_v2(f"${opportunity.ask_price_usd:.2f} {opportunity.currency}")
     estimate = escape_md_v2(f"${valuation.estimated_value_usd:.2f} USD")
     gap = escape_md_v2(f"${valuation.margin_usd:.2f}")
@@ -776,11 +781,10 @@ def format_alert(opportunity: DomainOpportunity, valuation: ValuationResult) -> 
         "🔥 *High\\-Margin Domain Deal*\n"
         f"🌐 *Domain:* `{domain}`\n"
         f"🏪 *Source:* {source}\n"
-        f"💵 *Asking Price:* {ask}\n"
-        f"🧠 *Estimated Value:* {estimate}\n"
-        f"📈 *Gap:* {gap} \\({ratio}\\)\n"
+        f"💵 *Asking vs Appraisal:* {ask} vs {estimate}\n"
+        f"📈 *Arbitrage Gap \\(Est\\. Profit\\):* {gap} \\({ratio}\\)\n"
         f"⚙️ *Valuation Method:* `{method}`\n"
-        f"🔗 *Listing:* {listing_url}"
+        f"🔗 *Domain:* `{domain}`"
     )
 
 
@@ -790,9 +794,11 @@ async def emit_alert(
     opportunity: DomainOpportunity,
     valuation: ValuationResult,
 ) -> None:
+    atom_buy_url = f"https://www.atom.com/domains/{opportunity.domain}"
     keyboard = InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🛒 Open Listing", url=opportunity.listing_url)],
+            [InlineKeyboardButton("🛒 Buy on Atom", url=atom_buy_url)],
+            [InlineKeyboardButton("🔗 Open Listing", url=opportunity.listing_url)],
             [InlineKeyboardButton("📊 Whois", url=opportunity.whois_url)],
         ]
     )
@@ -803,6 +809,51 @@ async def emit_alert(
         reply_markup=keyboard,
         disable_web_page_preview=True,
     )
+
+
+def _parse_chat_id_keys(chat_filters: Any) -> list[int]:
+    if not isinstance(chat_filters, dict):
+        return []
+    ids: list[int] = []
+    for key in chat_filters.keys():
+        try:
+            ids.append(int(key))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+def _chat_filter_matches(
+    opportunity: DomainOpportunity,
+    valuation: ValuationResult,
+    filters: dict[str, Any],
+) -> bool:
+    selected_tlds = filters.get("tlds")
+    if isinstance(selected_tlds, list) and selected_tlds:
+        selected = {str(t).lower() for t in selected_tlds if isinstance(t, str)}
+        if opportunity.tld not in selected:
+            return False
+
+    max_price = parse_float(filters.get("max_price"))
+    if max_price is not None and opportunity.ask_price_usd > max_price:
+        return False
+
+    min_appraisal = parse_float(filters.get("min_appraisal"))
+    if min_appraisal is not None and valuation.estimated_value_usd < min_appraisal:
+        return False
+
+    max_length = parse_float(filters.get("max_length"))
+    if max_length is not None and len(opportunity.sld) > int(max_length):
+        return False
+
+    keywords = filters.get("keywords")
+    if isinstance(keywords, list) and keywords:
+        sld = opportunity.sld.lower()
+        normalized = [str(keyword).lower() for keyword in keywords if isinstance(keyword, str)]
+        if normalized and not any(keyword in sld for keyword in normalized):
+            return False
+
+    return True
 
 
 async def watch_events(app: Application, chat_id: int) -> None:
@@ -831,6 +882,19 @@ async def watch_events(app: Application, chat_id: int) -> None:
 
         try:
             while True:
+                force_scan_event = app.bot_data.get("force_scan_event")
+                if not isinstance(force_scan_event, asyncio.Event):
+                    force_scan_event = asyncio.Event()
+                    app.bot_data["force_scan_event"] = force_scan_event
+
+                force_scan_run = False
+                if bool(app.bot_data.get("watcher_paused", False)):
+                    LOGGER.info("Watcher paused; waiting for /resume or /force_scan trigger.")
+                    await force_scan_event.wait()
+                    force_scan_event.clear()
+                    force_scan_run = True
+                    LOGGER.info("Pause override trigger received; running immediate cycle.")
+
                 now_utc = datetime.now(timezone.utc)
                 in_turbo = is_turbo_hour(now_utc, cfg)
                 poll_seconds = current_poll_seconds(now_utc, cfg)
@@ -845,11 +909,14 @@ async def watch_events(app: Application, chat_id: int) -> None:
                 if not opportunities:
                     LOGGER.info("No partnership opportunities found this cycle.")
 
+                chat_filters = app.bot_data.get("chat_filters", {})
+                target_chat_ids = {chat_id}
+                target_chat_ids.update(_parse_chat_id_keys(chat_filters))
+                trademark_cache: dict[str, bool] = {}
+
                 priority_heap: list[tuple[float, str, DomainOpportunity]] = []
                 for opportunity in opportunities:
                     if opportunity.tld not in cfg.allowed_tlds:
-                        continue
-                    if store.has_alerted(opportunity.domain):
                         continue
                     heapq.heappush(
                         priority_heap,
@@ -874,31 +941,51 @@ async def watch_events(app: Application, chat_id: int) -> None:
                     if not valuation.is_high_margin:
                         continue
 
-                    try:
-                        passes_trademark = await client.passes_trademark_filter(opportunity.domain)
-                    except Exception as exc:
-                        LOGGER.warning(
-                            "Trademark filter error for %s - bypassing filter: %s",
-                            opportunity.domain,
-                            exc,
-                        )
-                        passes_trademark = True
-                    if not passes_trademark:
-                        LOGGER.info("Trademark filter blocked domain=%s", opportunity.domain)
-                        continue
+                    for target_chat_id in sorted(target_chat_ids):
+                        if store.has_alerted(target_chat_id, opportunity.domain):
+                            continue
 
-                    try:
-                        await emit_alert(app, chat_id, opportunity, valuation)
-                        store.mark_alerted(opportunity.domain, opportunity.source)
-                        LOGGER.info(
-                            "Alert sent domain=%s ask=$%.2f estimate=$%.2f method=%s",
-                            opportunity.domain,
-                            opportunity.ask_price_usd,
-                            valuation.estimated_value_usd,
-                            valuation.method,
-                        )
-                    except Exception as exc:
-                        LOGGER.exception("Failed to send Telegram alert for %s: %s", opportunity.domain, exc)
+                        user_filters: dict[str, Any]
+                        if isinstance(chat_filters, dict) and isinstance(chat_filters.get(str(target_chat_id)), dict):
+                            user_filters = chat_filters[str(target_chat_id)]
+                        else:
+                            user_filters = {}
+
+                        if not _chat_filter_matches(opportunity, valuation, user_filters):
+                            continue
+
+                        trademark_enabled = bool(user_filters.get("trademark_check", True))
+                        if trademark_enabled:
+                            if opportunity.domain in trademark_cache:
+                                passes_trademark = trademark_cache[opportunity.domain]
+                            else:
+                                try:
+                                    passes_trademark = await client.passes_trademark_filter(opportunity.domain)
+                                except Exception as exc:
+                                    LOGGER.warning(
+                                        "Trademark filter error for %s - bypassing filter: %s",
+                                        opportunity.domain,
+                                        exc,
+                                    )
+                                    passes_trademark = True
+                                trademark_cache[opportunity.domain] = passes_trademark
+                            if not passes_trademark:
+                                LOGGER.info("Trademark filter blocked domain=%s", opportunity.domain)
+                                continue
+
+                        try:
+                            await emit_alert(app, target_chat_id, opportunity, valuation)
+                            store.mark_alerted(target_chat_id, opportunity.domain, opportunity.source)
+                            LOGGER.info(
+                                "Alert sent chat_id=%s domain=%s ask=$%.2f estimate=$%.2f method=%s",
+                                target_chat_id,
+                                opportunity.domain,
+                                opportunity.ask_price_usd,
+                                valuation.estimated_value_usd,
+                                valuation.method,
+                            )
+                        except Exception as exc:
+                            LOGGER.exception("Failed to send Telegram alert for %s: %s", opportunity.domain, exc)
 
                 quota_wait = client.quota_backoff_remaining_seconds()
                 breaker_wait = client.circuit_open_remaining_seconds()
@@ -911,7 +998,19 @@ async def watch_events(app: Application, chat_id: int) -> None:
                     quota_wait,
                     breaker_wait,
                 )
-                await asyncio.sleep(next_wait)
+                if force_scan_run:
+                    continue
+
+                if bool(app.bot_data.get("watcher_paused", False)):
+                    LOGGER.info("Watcher set to paused after cycle; waiting for trigger.")
+                    continue
+
+                try:
+                    await asyncio.wait_for(force_scan_event.wait(), timeout=next_wait)
+                    force_scan_event.clear()
+                    LOGGER.info("Force scan command received; running next cycle immediately.")
+                except TimeoutError:
+                    pass
         except asyncio.CancelledError:
             LOGGER.info("Atom watcher cancelled.")
             raise
