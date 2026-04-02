@@ -132,11 +132,12 @@ class WatcherConfig:
         delay_min = min(human_delay_min, human_delay_max)
         delay_max = max(human_delay_min, human_delay_max)
         partnership_urls_raw = os.getenv("ATOM_PARTNERSHIP_API_URLS", "").strip()
-        partnership_urls = tuple(
-            part.strip()
-            for part in partnership_urls_raw.split(",")
-            if part.strip()
-        )
+        parsed_urls: list[str] = []
+        for part in partnership_urls_raw.split(","):
+            cleaned = part.strip()
+            if cleaned:
+                parsed_urls.append(cleaned)
+        partnership_urls = tuple(parsed_urls)
         if not partnership_urls:
             single_url = os.getenv("ATOM_PARTNERSHIP_API_URL", "").strip()
             partnership_urls = (single_url,) if single_url else tuple()
@@ -384,8 +385,7 @@ class AtomClient:
         return max(0, int(remaining))
 
     def _backoff_seconds(self, attempt: int) -> float:
-        normalized_attempt = max(1, attempt)
-        exponential = self.cfg.retry_base_seconds * (2 ** (normalized_attempt - 1))
+        exponential = self.cfg.retry_base_seconds * (2 ** (attempt - 1))
         jitter = random.uniform(JITTER_MIN_SECONDS, JITTER_MAX_SECONDS)
         return min(self.cfg.max_backoff_seconds, exponential + jitter)
 
@@ -584,6 +584,7 @@ class AtomClient:
                         )
 
                     try:
+                        # JSON parsed successfully; stop retrying and continue valuation flow.
                         data = await response.json(content_type=None)
                         break
                     except Exception as exc:
