@@ -458,7 +458,7 @@ class AtomClient:
             self.cfg.max_backoff_seconds,
             self.cfg.retry_base_seconds * (2 ** (attempt - 1)),
         )
-        return random.uniform(JITTER_MIN_SECONDS, max(JITTER_MAX_SECONDS, capped_exponential))
+        return random.uniform(0.0, max(capped_exponential, MIN_RETRY_BASE_SECONDS))
 
     async def _request_json_with_retry(
         self,
@@ -970,10 +970,6 @@ async def watch_events(app: Application, chat_id: int) -> None:
 
                 while queue:
                     _, _, opportunity = heapq.heappop(queue)
-                    if opportunity.tld not in cfg.allowed_tlds:
-                        continue
-                    if store.has_alerted(opportunity.domain):
-                        continue
 
                     try:
                         valuation = await evaluate_opportunity(client, opportunity, cfg)
