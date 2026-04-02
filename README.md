@@ -120,6 +120,7 @@ ALERT_DB_PATH=alerts.db
 # Candidate generation and async throughput
 CANDIDATES_PER_CYCLE=20
 PER_SOURCE_CONCURRENCY=10
+BATCH_CHECK_SIZE=50
 
 # Retry/backoff controls for registrar APIs
 API_MAX_RETRIES=4

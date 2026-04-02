@@ -1,4 +1,5 @@
 import asyncio
+from functools import partial
 import logging
 import os
 import random
@@ -145,6 +146,7 @@ class WatcherConfig:
     db_path: str = "alerts.db"
     candidates_per_cycle: int = 20
     per_source_concurrency: int = 10
+    batch_check_size: int = 50
     max_retries: int = 4
     backoff_base_seconds: float = 0.5
     backoff_cap_seconds: float = 8.0
@@ -210,12 +212,13 @@ class WatcherConfig:
                 )
             ),
             per_source_concurrency=int(os.getenv("PER_SOURCE_CONCURRENCY", "10")),
+            batch_check_size=int(os.getenv("BATCH_CHECK_SIZE", "50")),
             max_retries=int(os.getenv("API_MAX_RETRIES", "4")),
             backoff_base_seconds=float(os.getenv("BACKOFF_BASE_SECONDS", "0.5")),
             backoff_cap_seconds=float(os.getenv("BACKOFF_CAP_SECONDS", "8.0")),
             go_use_ote=os.getenv("GODADDY_USE_OTE", "false").lower() == "true",
             namecheap_use_sandbox=os.getenv("NAMECHEAP_USE_SANDBOX", "false").lower() == "true",
-            namecom_base_url=os.getenv("NAMECOM_BASE_URL", "https://api.name.com").strip() or "https://api.name.com",
+            namecom_base_url=os.getenv("NAMECOM_BASE_URL", "").strip() or "https://api.name.com",
             expired_domains_url=os.getenv("EXPIRED_DOMAINS_URL", "").strip(),
             allow_unofficial_scraping=os.getenv("ALLOW_UNOFFICIAL_SCRAPING", "false").lower() == "true",
             http_timeout_seconds=int(os.getenv("HTTP_TIMEOUT_SECONDS", "20")),
@@ -369,6 +372,7 @@ class NamecheapAvailabilitySource:
         username: str,
         client_ip: str,
         use_sandbox: bool,
+        batch_check_size: int,
         max_retries: int,
         base_delay_seconds: float,
         cap_delay_seconds: float,
@@ -378,6 +382,7 @@ class NamecheapAvailabilitySource:
         self.api_key = api_key
         self.username = username
         self.client_ip = client_ip
+        self.batch_check_size = batch_check_size
         self.max_retries = max_retries
         self.base_delay_seconds = base_delay_seconds
         self.cap_delay_seconds = cap_delay_seconds
@@ -391,7 +396,10 @@ class NamecheapAvailabilitySource:
         if not candidates:
             return []
         deduped = list(dict.fromkeys(candidates))
-        chunks = [deduped[idx: idx + 50] for idx in range(0, len(deduped), 50)]
+        chunks = [
+            deduped[idx: idx + self.batch_check_size]
+            for idx in range(0, len(deduped), self.batch_check_size)
+        ]
         tasks = [self._check_batch(batch) for batch in chunks if batch]
         if not tasks:
             return []
@@ -484,6 +492,7 @@ class NameComAvailabilitySource:
         username: str,
         token: str,
         base_url: str,
+        batch_check_size: int,
         max_retries: int,
         base_delay_seconds: float,
         cap_delay_seconds: float,
@@ -491,6 +500,7 @@ class NameComAvailabilitySource:
         self.session = session
         self.auth = aiohttp.BasicAuth(login=username, password=token)
         self.base_url = base_url.rstrip("/")
+        self.batch_check_size = batch_check_size
         self.max_retries = max_retries
         self.base_delay_seconds = base_delay_seconds
         self.cap_delay_seconds = cap_delay_seconds
@@ -499,7 +509,10 @@ class NameComAvailabilitySource:
         if not candidates:
             return []
         deduped = list(dict.fromkeys(candidates))
-        chunks = [deduped[idx: idx + 50] for idx in range(0, len(deduped), 50)]
+        chunks = [
+            deduped[idx: idx + self.batch_check_size]
+            for idx in range(0, len(deduped), self.batch_check_size)
+        ]
         tasks = [self._check_batch(batch) for batch in chunks if batch]
         if not tasks:
             return []
@@ -593,7 +606,7 @@ class NameComAvailabilitySource:
         for endpoint in endpoints:
             try:
                 return await with_exponential_backoff(
-                    lambda endpoint=endpoint: do_request(endpoint),
+                    partial(do_request, endpoint),
                     op_name=f"Name.com batch check ({len(domains)} domains)",
                     base_delay_seconds=self.base_delay_seconds,
                     cap_delay_seconds=self.cap_delay_seconds,
@@ -606,7 +619,10 @@ class NameComAvailabilitySource:
                 last_error = exc
                 break
 
-        raise RuntimeError(f"Name.com API endpoint unavailable: {last_error}")
+        raise RuntimeError(
+            "Name.com API endpoint unavailable: "
+            f"{type(last_error).__name__}: {last_error}"
+        )
 
 
 class ExpiredDomainsScraperSource:
@@ -808,6 +824,7 @@ async def watch_events(app: Application, chat_id: int) -> None:
                 namecheap_username,
                 namecheap_client_ip,
                 cfg.namecheap_use_sandbox,
+                cfg.batch_check_size,
                 cfg.max_retries,
                 cfg.backoff_base_seconds,
                 cfg.backoff_cap_seconds,
@@ -821,6 +838,7 @@ async def watch_events(app: Application, chat_id: int) -> None:
                 namecom_username,
                 namecom_token,
                 cfg.namecom_base_url,
+                cfg.batch_check_size,
                 cfg.max_retries,
                 cfg.backoff_base_seconds,
                 cfg.backoff_cap_seconds,
