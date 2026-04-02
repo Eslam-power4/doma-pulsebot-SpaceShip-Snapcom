@@ -21,6 +21,7 @@ MIN_RETRY_ATTEMPTS = 1
 MIN_RETRY_BASE_SECONDS = 0.2
 MIN_BACKOFF_SECONDS = 1.0
 MIN_QUOTA_COOLDOWN_SECONDS = 30
+MIN_CIRCUIT_BREAKER_SECONDS = 30
 JITTER_MIN_SECONDS = 0.15
 JITTER_MAX_SECONDS = 0.85
 APPRAISAL_FALLBACK_TOKENS = (
@@ -165,7 +166,7 @@ class WatcherConfig:
                 int(os.getenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "4")),
             ),
             circuit_breaker_open_seconds=max(
-                MIN_QUOTA_COOLDOWN_SECONDS,
+                MIN_CIRCUIT_BREAKER_SECONDS,
                 int(os.getenv("CIRCUIT_BREAKER_OPEN_SECONDS", "120")),
             ),
             min_margin_usd=float(os.getenv("ARBITRAGE_MIN_GAP_USD", "20")),
@@ -369,6 +370,7 @@ def score_with_internal_rules(domain: str, cfg: WatcherConfig) -> tuple[float, s
 
 
 def priority_score(opportunity: DomainOpportunity, cfg: WatcherConfig) -> float:
+    """Return a heuristic score so highest-value candidates are processed first."""
     sld = opportunity.sld
     score = 0.0
 
@@ -458,9 +460,7 @@ class AtomClient:
             self.cfg.max_backoff_seconds,
             self.cfg.retry_base_seconds * (2 ** (attempt - 1)),
         )
-        lower = min(self.cfg.retry_base_seconds, capped_exponential)
-        upper = max(self.cfg.retry_base_seconds, capped_exponential)
-        return random.uniform(lower, upper)
+        return random.uniform(0.0, max(capped_exponential, MIN_RETRY_BASE_SECONDS))
 
     async def _request_json_with_retry(
         self,
@@ -945,6 +945,8 @@ async def watch_events(app: Application, chat_id: int) -> None:
 
                 if not opportunities:
                     LOGGER.info("No partnership opportunities found this cycle.")
+                if len(opportunities) > cfg.max_domains_per_cycle:
+                    opportunities = opportunities[: cfg.max_domains_per_cycle]
 
                 queue: list[tuple[float, str, DomainOpportunity]] = []
                 for opportunity in opportunities:
