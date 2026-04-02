@@ -1,4 +1,5 @@
 import asyncio
+import heapq
 import logging
 import os
 import random
@@ -20,12 +21,17 @@ MIN_RETRY_ATTEMPTS = 1
 MIN_RETRY_BASE_SECONDS = 0.2
 MIN_BACKOFF_SECONDS = 1.0
 MIN_QUOTA_COOLDOWN_SECONDS = 30
+MIN_CIRCUIT_BREAKER_SECONDS = 30
 JITTER_MIN_SECONDS = 0.15
 JITTER_MAX_SECONDS = 0.85
 
 
 class AppraisalUnavailableError(Exception):
     """Raised when Atom appraisal API is unavailable."""
+
+
+class AtomCircuitOpenError(Exception):
+    """Raised when Atom API calls are temporarily blocked by the circuit breaker."""
 
 
 @dataclass(frozen=True)
@@ -73,6 +79,8 @@ class WatcherConfig:
     retry_base_seconds: float = 1.2
     max_backoff_seconds: float = 45.0
     quota_cooldown_seconds: int = 180
+    circuit_breaker_failure_threshold: int = 4
+    circuit_breaker_open_seconds: int = 120
     min_margin_usd: float = 20.0
     min_margin_ratio: float = 1.8
     allowed_tlds: set[str] = field(default_factory=lambda: {".dev", ".app", ".cloud"})
@@ -115,6 +123,14 @@ class WatcherConfig:
             retry_base_seconds=max(MIN_RETRY_BASE_SECONDS, float(os.getenv("RETRY_BASE_SECONDS", "1.2"))),
             max_backoff_seconds=max(MIN_BACKOFF_SECONDS, float(os.getenv("MAX_BACKOFF_SECONDS", "45"))),
             quota_cooldown_seconds=max(MIN_QUOTA_COOLDOWN_SECONDS, int(os.getenv("QUOTA_COOLDOWN_SECONDS", "180"))),
+            circuit_breaker_failure_threshold=max(
+                2,
+                int(os.getenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "4")),
+            ),
+            circuit_breaker_open_seconds=max(
+                MIN_CIRCUIT_BREAKER_SECONDS,
+                int(os.getenv("CIRCUIT_BREAKER_OPEN_SECONDS", "120")),
+            ),
             min_margin_usd=float(os.getenv("ARBITRAGE_MIN_GAP_USD", "20")),
             min_margin_ratio=float(os.getenv("ARBITRAGE_MIN_RATIO", "1.8")),
             allowed_tlds=allowed_tlds or {".dev", ".app", ".cloud"},
@@ -286,6 +302,77 @@ def extract_rows(payload: Any) -> list[dict[str, Any]]:
     return [payload]
 
 
+def score_with_internal_rules(domain: str, cfg: WatcherConfig) -> tuple[float, str]:
+    sld = domain.split(".", 1)[0].lower()
+    tld = domain.rpartition(".")[2].lower()
+    tld_pref = f".{tld}" if tld else ""
+
+    length = len(sld)
+    if length <= 4:
+        length_score = 120.0
+    elif length <= 6:
+        length_score = 90.0
+    elif length <= 8:
+        length_score = 65.0
+    elif length <= 12:
+        length_score = 40.0
+    else:
+        length_score = 18.0
+
+    tld_score = {
+        ".dev": 65.0,
+        ".app": 58.0,
+        ".cloud": 52.0,
+    }.get(tld_pref, 20.0)
+
+    matched_keywords = [kw for kw in cfg.high_value_keywords if kw in sld]
+    keyword_score = min(3, len(matched_keywords)) * cfg.keyword_value_usd
+
+    penalty = 0.0
+    if "-" in sld:
+        penalty += 14.0
+    if any(ch.isdigit() for ch in sld):
+        penalty += 10.0
+
+    total = max(5.0, length_score + tld_score + keyword_score - penalty)
+    reason = (
+        f"Rule-based score: length={length_score:.1f}, tld={tld_score:.1f}, "
+        f"keywords={keyword_score:.1f}, penalty={penalty:.1f}"
+    )
+    return round(total, 2), reason
+
+
+def priority_score(opportunity: DomainOpportunity, cfg: WatcherConfig) -> float:
+    """Return a heuristic score so highest-value candidates are processed first."""
+    sld = opportunity.sld
+    score = 0.0
+
+    if sld in cfg.high_value_keywords:
+        score += 1000.0
+    score += sum(250.0 for kw in cfg.high_value_keywords if kw in sld)
+
+    length = len(sld)
+    if length <= 3:
+        score += 500.0
+    elif length <= 5:
+        score += 350.0
+    elif length <= 7:
+        score += 220.0
+    elif length <= 10:
+        score += 120.0
+    else:
+        score += 40.0
+
+    if opportunity.tld in cfg.allowed_tlds:
+        score += 80.0
+    if "-" in sld:
+        score -= 35.0
+    if any(ch.isdigit() for ch in sld):
+        score -= 20.0
+
+    return score
+
+
 class AtomClient:
     def __init__(self, session: aiohttp.ClientSession, cfg: WatcherConfig) -> None:
         self.session = session
@@ -318,20 +405,35 @@ class AtomClient:
             loop.time() + self.cfg.quota_cooldown_seconds,
         )
 
+    def _note_retryable_failure(self) -> None:
+        loop = asyncio.get_running_loop()
+        self._circuit_failures += 1
+        if self._circuit_failures >= self.cfg.circuit_breaker_failure_threshold:
+            self._circuit_open_until_monotonic = max(
+                self._circuit_open_until_monotonic,
+                loop.time() + self.cfg.circuit_breaker_open_seconds,
+            )
+            self._circuit_failures = 0
+
+    def _note_success(self) -> None:
+        self._circuit_failures = 0
+
+    def circuit_open_remaining_seconds(self) -> int:
+        loop = asyncio.get_running_loop()
+        remaining = self._circuit_open_until_monotonic - loop.time()
+        return max(0, int(remaining))
+
     def quota_backoff_remaining_seconds(self) -> int:
         loop = asyncio.get_running_loop()
         remaining = self._quota_backoff_until_monotonic - loop.time()
         return max(0, int(remaining))
 
     def _backoff_seconds(self, attempt: int) -> float:
-        cap_multiplier = max(
-            1.0,
-            self.cfg.max_backoff_seconds / max(self.cfg.retry_base_seconds, MIN_RETRY_BASE_SECONDS),
+        capped_exponential = min(
+            self.cfg.max_backoff_seconds,
+            self.cfg.retry_base_seconds * (2 ** (attempt - 1)),
         )
-        safe_multiplier = min(2 ** (attempt - 1), cap_multiplier)
-        exponential = self.cfg.retry_base_seconds * safe_multiplier
-        jitter = random.uniform(JITTER_MIN_SECONDS, JITTER_MAX_SECONDS)
-        return min(self.cfg.max_backoff_seconds, exponential + jitter)
+        return random.uniform(0.0, max(capped_exponential, MIN_RETRY_BASE_SECONDS))
 
     async def _request_json_with_retry(
         self,
@@ -346,6 +448,11 @@ class AtomClient:
     ) -> Optional[Any]:
         if not url:
             return None
+        circuit_wait = self.circuit_open_remaining_seconds()
+        if circuit_wait > 0:
+            raise AtomCircuitOpenError(
+                f"{context_label} blocked by circuit breaker for {circuit_wait}s"
+            )
 
         last_error: Optional[str] = None
         for attempt in range(1, self.cfg.max_retry_attempts + 1):
@@ -363,6 +470,7 @@ class AtomClient:
                     if response.status == 429:
                         # 429 indicates temporary throttling; track cooldown then retry with backoff.
                         self._note_rate_limit()
+                        self._note_retryable_failure()
                         wait_seconds = self._backoff_seconds(attempt)
                         LOGGER.warning(
                             "%s rate-limited (429) on %s; retrying in %.2fs",
@@ -373,12 +481,12 @@ class AtomClient:
                         await asyncio.sleep(wait_seconds)
                         continue
                     if 500 <= response.status < 600:
+                        self._note_retryable_failure()
                         wait_seconds = self._backoff_seconds(attempt)
                         LOGGER.warning(
-                            "%s upstream error status=%s on %s; retrying in %.2fs",
+                            "%s upstream status=%s; retrying in %.2fs",
                             context_label,
                             response.status,
-                            url,
                             wait_seconds,
                         )
                         await asyncio.sleep(wait_seconds)
@@ -397,19 +505,16 @@ class AtomClient:
                             f"{context_label} failed status={response.status} body={body[:300]}"
                         )
                     try:
-                        return await response.json(content_type=None)
+                        payload = await response.json(content_type=None)
+                        self._note_success()
+                        return payload
                     except Exception as exc:
                         raise RuntimeError(f"{context_label} returned invalid JSON: {exc}") from exc
             except aiohttp.ClientError as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
+                self._note_retryable_failure()
                 wait_seconds = self._backoff_seconds(attempt)
-                LOGGER.warning(
-                    "%s network error on %s: %s; retrying in %.2fs",
-                    context_label,
-                    url,
-                    exc,
-                    wait_seconds,
-                )
+                LOGGER.info("%s network error: %s; retrying in %.2fs", context_label, exc, wait_seconds)
                 await asyncio.sleep(wait_seconds)
 
         if last_error:
@@ -421,12 +526,16 @@ class AtomClient:
             LOGGER.warning("ATOM_PARTNERSHIP_API_URL is not set; no domains fetched.")
             return []
 
-        payload = await self._request_json_with_retry(
-            "GET",
-            self._partnership_url,
-            headers=self._headers(self.cfg.atom_api_key),
-            context_label="Partnership API",
-        )
+        try:
+            payload = await self._request_json_with_retry(
+                "GET",
+                self._partnership_urls,
+                headers=self._headers(self.cfg.atom_partnership_api_key),
+                context_label="Partnership API",
+            )
+        except AtomCircuitOpenError as exc:
+            LOGGER.info("%s", exc)
+            return []
         if payload is None:
             return []
 
@@ -473,14 +582,15 @@ class AtomClient:
                 )
             )
 
-        if len(opportunities) > self.cfg.max_domains_per_cycle:
-            opportunities = opportunities[: self.cfg.max_domains_per_cycle]
-
         return opportunities
 
     async def appraise_with_atom_ai(self, domain: str) -> float:
         if not self.cfg.atom_appraisal_url:
             raise AppraisalUnavailableError("ATOM_APPRAISAL_API_URL is not set")
+        if self.circuit_open_remaining_seconds() > 0:
+            raise AppraisalUnavailableError(
+                f"AI appraisal temporarily paused by circuit breaker ({self.circuit_open_remaining_seconds()}s)"
+            )
 
         payload = {"domain": domain}
         data: Optional[Any] = None
@@ -497,22 +607,19 @@ class AtomClient:
 
                     if response.status == 429:
                         self._note_rate_limit()
+                        self._note_retryable_failure()
                         wait_seconds = self._backoff_seconds(attempt)
-                        LOGGER.warning(
-                            "Appraisal API rate-limited (429) for %s; retrying in %.2fs",
-                            domain,
-                            wait_seconds,
-                        )
+                        LOGGER.info("Appraisal API rate-limited (429); retrying in %.2fs", wait_seconds)
                         await asyncio.sleep(wait_seconds)
                         continue
 
                     if response.status != 200:
                         if 500 <= response.status < 600:
+                            self._note_retryable_failure()
                             wait_seconds = self._backoff_seconds(attempt)
-                            LOGGER.warning(
-                                "Appraisal API error status=%s for %s; retrying in %.2fs",
+                            LOGGER.info(
+                                "Appraisal API status=%s; retrying in %.2fs",
                                 response.status,
-                                domain,
                                 wait_seconds,
                             )
                             await asyncio.sleep(wait_seconds)
@@ -524,19 +631,16 @@ class AtomClient:
                     try:
                         # JSON parsed successfully; stop retrying and continue valuation flow.
                         data = await response.json(content_type=None)
+                        self._note_success()
                         break
                     except Exception as exc:
                         raise AppraisalUnavailableError(
                             f"AI appraisal returned invalid JSON: {exc}"
                         ) from exc
             except aiohttp.ClientError as exc:
+                self._note_retryable_failure()
                 wait_seconds = self._backoff_seconds(attempt)
-                LOGGER.warning(
-                    "Appraisal API network error for %s: %s; retrying in %.2fs",
-                    domain,
-                    exc,
-                    wait_seconds,
-                )
+                LOGGER.info("Appraisal API network error: %s; retrying in %.2fs", exc, wait_seconds)
                 await asyncio.sleep(wait_seconds)
         else:
             raise AppraisalUnavailableError(
@@ -741,11 +845,25 @@ async def watch_events(app: Application, chat_id: int) -> None:
                 if not opportunities:
                     LOGGER.info("No partnership opportunities found this cycle.")
 
+                priority_heap: list[tuple[float, str, DomainOpportunity]] = []
                 for opportunity in opportunities:
                     if opportunity.tld not in cfg.allowed_tlds:
                         continue
                     if store.has_alerted(opportunity.domain):
                         continue
+                    heapq.heappush(
+                        priority_heap,
+                        (
+                            -priority_score(opportunity, cfg),
+                            opportunity.domain,
+                            opportunity,
+                        ),
+                    )
+
+                evaluations_left = min(len(priority_heap), cfg.max_domains_per_cycle)
+                while priority_heap and evaluations_left > 0:
+                    _, _, opportunity = heapq.heappop(priority_heap)
+                    evaluations_left -= 1
 
                     try:
                         valuation = await evaluate_opportunity(client, opportunity, cfg)
@@ -783,13 +901,15 @@ async def watch_events(app: Application, chat_id: int) -> None:
                         LOGGER.exception("Failed to send Telegram alert for %s: %s", opportunity.domain, exc)
 
                 quota_wait = client.quota_backoff_remaining_seconds()
-                next_wait = max(poll_seconds, quota_wait)
+                breaker_wait = client.circuit_open_remaining_seconds()
+                next_wait = max(poll_seconds, quota_wait, breaker_wait)
                 LOGGER.info(
-                    "Cycle complete mode=%s opportunities=%s next_poll=%ss quota_wait=%ss",
+                    "Cycle complete mode=%s opportunities=%s next_poll=%ss quota_wait=%ss breaker_wait=%ss",
                     "turbo" if in_turbo else "eco",
                     len(opportunities),
                     poll_seconds,
                     quota_wait,
+                    breaker_wait,
                 )
                 await asyncio.sleep(next_wait)
         except asyncio.CancelledError:
