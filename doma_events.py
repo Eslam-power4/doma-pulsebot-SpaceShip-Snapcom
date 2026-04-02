@@ -420,6 +420,7 @@ class AtomClient:
                 ) as response:
                     body = await response.text()
                     if response.status == 429:
+                        # 429 indicates temporary throttling, so retry with backoff instead of immediate fallback.
                         self._note_rate_limit()
                         wait_seconds = self._backoff_seconds(attempt)
                         LOGGER.warning(

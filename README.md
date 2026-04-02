@@ -124,7 +124,7 @@ ECO_POLL_SECONDS=120
 # Turbo mode (inside peak windows)
 TURBO_POLL_SECONDS=8
 # Comma-separated hour ranges in UTC (start-end), supports wrap windows
-# Avoid same-hour ranges (e.g., 18-18) to prevent ambiguity; use explicit one-hour windows like 18-19.
+# Same-hour ranges (e.g., 18-18) are auto-converted to one-hour windows (18-19).
 TURBO_HOURS_UTC=18-21
 
 # =========================
