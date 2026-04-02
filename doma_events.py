@@ -269,6 +269,11 @@ def extract_error_message(data: dict[str, Any]) -> Optional[str]:
     )
 
 
+def is_quota_exhaustion_error(exc: Exception) -> bool:
+    message = str(exc)
+    return "status=429" in message or "status=403" in message
+
+
 def extract_rows(payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, list):
         return [row for row in payload if isinstance(row, dict)]
@@ -573,8 +578,7 @@ class AtomClient:
                 context_label="Trademark API",
             )
         except Exception as exc:
-            message = str(exc)
-            if "status=429" in message or "status=403" in message:
+            if is_quota_exhaustion_error(exc):
                 LOGGER.warning("Trademark quota exhausted - bypassing filter for %s", domain)
             else:
                 LOGGER.warning("Trademark filter failed for %s - bypassing filter: %s", domain, exc)
@@ -615,15 +619,14 @@ async def evaluate_opportunity(
     opportunity: DomainOpportunity,
     cfg: WatcherConfig,
 ) -> ValuationResult:
+    method = "atom_ai"
+    reason = "Atom Appraisal API"
     try:
         ai_value = await client.appraise_with_atom_ai(opportunity.domain)
-        method = "atom_ai"
-        reason = "Atom Appraisal API"
         estimated = ai_value
         LOGGER.info("Valuation method=AI domain=%s estimated=$%.2f", opportunity.domain, estimated)
     except AppraisalUnavailableError as exc:
-        message = str(exc)
-        if "status=429" in message or "status=403" in message:
+        if is_quota_exhaustion_error(exc):
             LOGGER.warning("Appraisal quota exhausted - bypassing filter for %s", opportunity.domain)
         else:
             LOGGER.warning("Appraisal failed for %s - bypassing filter: %s", opportunity.domain, exc)
