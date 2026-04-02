@@ -147,6 +147,7 @@ QUOTA_COOLDOWN_SECONDS=180
 ```bash
 cd /absolute/path/to/doma-pulsebot
 source .venv/bin/activate
+# Optional safety check: verify a bot process is not already running before starting another one.
 ps aux | grep "python bot.py" | grep -v grep
 nohup python bot.py > bot.log 2>&1 &
 echo $! > bot.pid

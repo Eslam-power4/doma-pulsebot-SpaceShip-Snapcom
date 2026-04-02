@@ -180,22 +180,26 @@ class WatcherConfig:
 def parse_turbo_hours(raw_value: str) -> tuple[tuple[int, int], ...]:
     ranges: list[tuple[int, int]] = []
     for part in raw_value.split(","):
-        token = part.strip()
-        if not token:
+        range_text = part.strip()
+        if not range_text:
             continue
-        if "-" not in token:
+        if "-" not in range_text:
+            LOGGER.warning("Ignoring invalid TURBO_HOURS_UTC range (missing '-'): %s", range_text)
             continue
-        start_s, end_s = token.split("-", 1)
+        start_s, end_s = range_text.split("-", 1)
         try:
             start = int(start_s)
             end = int(end_s)
         except ValueError:
+            LOGGER.warning("Ignoring invalid TURBO_HOURS_UTC range (non-integer): %s", range_text)
             continue
         if 0 <= start <= 23 and 0 <= end <= 23:
             # same-hour token like "18-18" is treated as a one-hour window [18:00, 19:00)
             if start == end:
                 end = (start + 1) % 24
             ranges.append((start, end))
+        else:
+            LOGGER.warning("Ignoring invalid TURBO_HOURS_UTC range (out of bounds): %s", range_text)
     return tuple(ranges) if ranges else ((18, 21),)
 
 
@@ -425,7 +429,7 @@ class AtomClient:
                 ) as response:
                     body = await response.text()
                     if response.status == 429:
-                        # 429 indicates temporary throttling, so retry with backoff instead of immediate fallback.
+                        # 429 indicates temporary throttling; track cooldown then retry with backoff.
                         self._note_rate_limit()
                         wait_seconds = self._backoff_seconds(attempt)
                         LOGGER.warning(
@@ -547,6 +551,7 @@ class AtomClient:
             raise AppraisalUnavailableError("ATOM_APPRAISAL_API_URL is not set")
 
         payload = {"domain": domain}
+        data: Optional[Any] = None
         for attempt in range(1, self.cfg.max_retry_attempts + 1):
             await self._humanized_delay()
             try:
