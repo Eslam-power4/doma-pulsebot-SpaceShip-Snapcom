@@ -22,8 +22,6 @@ MIN_BACKOFF_SECONDS = 1.0
 MIN_QUOTA_COOLDOWN_SECONDS = 30
 JITTER_MIN_SECONDS = 0.15
 JITTER_MAX_SECONDS = 0.85
-DEFAULT_ATOM_PARTNERSHIP_API_URL = "https://api.atom.com/partnership/domains"
-DEFAULT_ATOM_APPRAISAL_API_URL = "https://api.atom.com/appraisal"
 
 
 class AppraisalUnavailableError(Exception):
@@ -100,8 +98,8 @@ class WatcherConfig:
         human_delay_max = float(os.getenv("HUMAN_DELAY_MAX_SECONDS", "2.5"))
         delay_min = min(human_delay_min, human_delay_max)
         delay_max = max(human_delay_min, human_delay_max)
-        partnership_url = os.getenv("ATOM_PARTNERSHIP_API_URL", DEFAULT_ATOM_PARTNERSHIP_API_URL).strip()
-        appraisal_url = os.getenv("ATOM_APPRAISAL_API_URL", DEFAULT_ATOM_APPRAISAL_API_URL).strip()
+        partnership_url = os.getenv("ATOM_PARTNERSHIP_API_URL", "").strip()
+        appraisal_url = os.getenv("ATOM_APPRAISAL_API_URL", "").strip()
         return cls(
             poll_seconds=int(os.getenv("WATCHER_POLL_SECONDS", "30")),
             eco_poll_seconds=int(os.getenv("ECO_POLL_SECONDS", "120")),
@@ -206,6 +204,23 @@ class AlertStore:
 
     def close(self) -> None:
         self.conn.close()
+
+
+def validate_required_atom_config(cfg: WatcherConfig) -> None:
+    missing: list[str] = []
+    if not cfg.atom_partnership_url:
+        missing.append("ATOM_PARTNERSHIP_API_URL")
+    if not cfg.atom_appraisal_url:
+        missing.append("ATOM_APPRAISAL_API_URL")
+    if not cfg.atom_api_key:
+        missing.append("ATOM_API_KEY")
+    if not cfg.atom_appraisal_key:
+        missing.append("ATOM_APPRAISAL_KEY")
+    if not cfg.atom_user_id:
+        missing.append("ATOM_USER_ID")
+    if missing:
+        missing_csv = ", ".join(missing)
+        raise ValueError(f"Missing required Atom configuration: {missing_csv}")
 
 
 def escape_md_v2(value: str) -> str:
@@ -403,7 +418,6 @@ class AtomClient:
             "GET",
             self._partnership_url,
             headers=self._headers(self.cfg.atom_api_key),
-            params={"user_id": self.cfg.atom_user_id} if self.cfg.atom_user_id else None,
             context_label="Partnership API",
         )
         if payload is None:
@@ -462,8 +476,6 @@ class AtomClient:
             raise AppraisalUnavailableError("ATOM_APPRAISAL_API_URL is not set")
 
         payload = {"domain": domain}
-        if self.cfg.atom_user_id:
-            payload["user_id"] = self.cfg.atom_user_id
         data: Optional[Any] = None
         for attempt in range(1, self.cfg.max_retry_attempts + 1):
             await self._humanized_delay()
@@ -557,7 +569,10 @@ async def evaluate_opportunity(
         estimated = ai_value
         LOGGER.info("Valuation method=AI domain=%s estimated=$%.2f", opportunity.domain, estimated)
     except AppraisalUnavailableError as exc:
-        raise AppraisalUnavailableError(f"Atom appraisal required for scoring: {exc}") from exc
+        raise AppraisalUnavailableError(
+            "Atom appraisal required for scoring. Ensure ATOM_APPRAISAL_API_URL and "
+            f"ATOM_APPRAISAL_KEY are configured and valid. Details: {exc}"
+        ) from exc
 
     margin_usd = estimated - opportunity.ask_price_usd
     ratio = estimated / opportunity.ask_price_usd if opportunity.ask_price_usd > 0 else 0.0
@@ -618,6 +633,7 @@ async def emit_alert(
 
 async def watch_events(app: Application, chat_id: int) -> None:
     cfg = WatcherConfig.from_env()
+    validate_required_atom_config(cfg)
     store = AlertStore(cfg.db_path)
     timeout = aiohttp.ClientTimeout(total=cfg.request_timeout_seconds)
 
