@@ -22,17 +22,10 @@ MIN_BACKOFF_SECONDS = 1.0
 MIN_QUOTA_COOLDOWN_SECONDS = 30
 JITTER_MIN_SECONDS = 0.15
 JITTER_MAX_SECONDS = 0.85
-APPRAISAL_FALLBACK_TOKENS = (
-    "out of credits",
-    "rate limit exceeded",
-    "quota exhausted",
-    "credits exhausted",
-    "insufficient credits",
-)
 
 
 class AppraisalUnavailableError(Exception):
-    """Raised when Atom AI appraisal cannot be used and fallback is required."""
+    """Raised when Atom appraisal API is unavailable."""
 
 
 @dataclass(frozen=True)
@@ -85,39 +78,13 @@ class WatcherConfig:
     allowed_tlds: set[str] = field(default_factory=lambda: {".dev", ".app", ".cloud"})
     keyword_value_usd: float = 22.0
     atom_partnership_url: str = ""
-    atom_partnership_urls: tuple[str, ...] = tuple()
-    atom_partnership_api_key: str = ""
+    atom_api_key: str = ""
+    atom_user_id: str = ""
     atom_appraisal_url: str = ""
-    atom_appraisal_api_key: str = ""
+    atom_appraisal_key: str = ""
     proxy_url: str = ""
     human_delay_min_seconds: float = 0.8
     human_delay_max_seconds: float = 2.5
-    seo_api_url: str = ""
-    seo_api_key: str = ""
-    search_volume_api_url: str = ""
-    search_volume_api_key: str = ""
-    namebio_api_url: str = ""
-    namebio_api_key: str = ""
-    seo_bonus_points: float = 12.0
-    search_volume_bonus_points: float = 10.0
-    historical_sales_bonus_points: float = 15.0
-    high_value_keywords: tuple[str, ...] = (
-        "ai",
-        "app",
-        "api",
-        "agent",
-        "bot",
-        "cloud",
-        "compute",
-        "crypto",
-        "data",
-        "dev",
-        "labs",
-        "ml",
-        "saas",
-        "tech",
-        "web",
-    )
 
     @classmethod
     def from_env(cls) -> "WatcherConfig":
@@ -131,16 +98,8 @@ class WatcherConfig:
         human_delay_max = float(os.getenv("HUMAN_DELAY_MAX_SECONDS", "2.5"))
         delay_min = min(human_delay_min, human_delay_max)
         delay_max = max(human_delay_min, human_delay_max)
-        partnership_urls_raw = os.getenv("ATOM_PARTNERSHIP_API_URLS", "").strip()
-        parsed_urls: list[str] = []
-        for part in partnership_urls_raw.split(","):
-            cleaned = part.strip()
-            if cleaned:
-                parsed_urls.append(cleaned)
-        partnership_urls = tuple(parsed_urls)
-        if not partnership_urls:
-            single_url = os.getenv("ATOM_PARTNERSHIP_API_URL", "").strip()
-            partnership_urls = (single_url,) if single_url else tuple()
+        partnership_url = os.getenv("ATOM_PARTNERSHIP_API_URL", "").strip()
+        appraisal_url = os.getenv("ATOM_APPRAISAL_API_URL", "").strip()
         return cls(
             poll_seconds=int(os.getenv("WATCHER_POLL_SECONDS", "30")),
             eco_poll_seconds=int(os.getenv("ECO_POLL_SECONDS", "120")),
@@ -157,23 +116,14 @@ class WatcherConfig:
             min_margin_ratio=float(os.getenv("ARBITRAGE_MIN_RATIO", "1.8")),
             allowed_tlds=allowed_tlds or {".dev", ".app", ".cloud"},
             keyword_value_usd=float(os.getenv("KEYWORD_VALUE_USD", "22")),
-            atom_partnership_url=partnership_urls[0] if partnership_urls else "",
-            atom_partnership_urls=partnership_urls,
-            atom_partnership_api_key=os.getenv("ATOM_PARTNERSHIP_API_KEY", "").strip(),
-            atom_appraisal_url=os.getenv("ATOM_APPRAISAL_API_URL", "").strip(),
-            atom_appraisal_api_key=os.getenv("ATOM_APPRAISAL_API_KEY", "").strip(),
+            atom_partnership_url=partnership_url,
+            atom_api_key=os.getenv("ATOM_API_KEY", "").strip(),
+            atom_user_id=os.getenv("ATOM_USER_ID", "").strip(),
+            atom_appraisal_url=appraisal_url,
+            atom_appraisal_key=os.getenv("ATOM_APPRAISAL_KEY", "").strip(),
             proxy_url=os.getenv("PROXY_URL", "").strip(),
             human_delay_min_seconds=delay_min,
             human_delay_max_seconds=delay_max,
-            seo_api_url=os.getenv("SEO_API_URL", "").strip(),
-            seo_api_key=os.getenv("SEO_API_KEY", "").strip(),
-            search_volume_api_url=os.getenv("SEARCH_VOL_API_URL", "").strip(),
-            search_volume_api_key=os.getenv("SEARCH_VOL_API_KEY", "").strip(),
-            namebio_api_url=os.getenv("NAMEBIO_API_URL", "").strip(),
-            namebio_api_key=os.getenv("NAMEBIO_API_KEY", "").strip(),
-            seo_bonus_points=float(os.getenv("SEO_BONUS_POINTS", "12")),
-            search_volume_bonus_points=float(os.getenv("SEARCH_VOL_BONUS_POINTS", "10")),
-            historical_sales_bonus_points=float(os.getenv("NAMEBIO_BONUS_POINTS", "15")),
         )
 
 
@@ -256,6 +206,23 @@ class AlertStore:
         self.conn.close()
 
 
+def validate_required_atom_config(cfg: WatcherConfig) -> None:
+    missing: list[str] = []
+    if not cfg.atom_partnership_url:
+        missing.append("ATOM_PARTNERSHIP_API_URL")
+    if not cfg.atom_appraisal_url:
+        missing.append("ATOM_APPRAISAL_API_URL")
+    if not cfg.atom_api_key:
+        missing.append("ATOM_API_KEY")
+    if not cfg.atom_appraisal_key:
+        missing.append("ATOM_APPRAISAL_KEY")
+    if not cfg.atom_user_id:
+        missing.append("ATOM_USER_ID")
+    if missing:
+        missing_csv = ", ".join(missing)
+        raise ValueError(f"Missing required Atom configuration: {missing_csv}")
+
+
 def escape_md_v2(value: str) -> str:
     escaped = value
     for char in SPECIAL_CHARS:
@@ -313,52 +280,11 @@ def extract_rows(payload: Any) -> list[dict[str, Any]]:
     return [payload]
 
 
-def score_with_internal_rules(domain: str, cfg: WatcherConfig) -> tuple[float, str]:
-    sld = domain.split(".", 1)[0].lower()
-    tld = domain.rpartition(".")[2].lower()
-    tld_pref = f".{tld}" if tld else ""
-
-    length = len(sld)
-    if length <= 4:
-        length_score = 120.0
-    elif length <= 6:
-        length_score = 90.0
-    elif length <= 8:
-        length_score = 65.0
-    elif length <= 12:
-        length_score = 40.0
-    else:
-        length_score = 18.0
-
-    tld_score = {
-        ".dev": 65.0,
-        ".app": 58.0,
-        ".cloud": 52.0,
-    }.get(tld_pref, 20.0)
-
-    matched_keywords = [kw for kw in cfg.high_value_keywords if kw in sld]
-    keyword_score = min(3, len(matched_keywords)) * cfg.keyword_value_usd
-
-    penalty = 0.0
-    if "-" in sld:
-        penalty += 14.0
-    if any(ch.isdigit() for ch in sld):
-        penalty += 10.0
-
-    total = max(5.0, length_score + tld_score + keyword_score - penalty)
-    reason = (
-        f"Rule-based score: length={length_score:.1f}, tld={tld_score:.1f}, "
-        f"keywords={keyword_score:.1f}, penalty={penalty:.1f}"
-    )
-    return round(total, 2), reason
-
-
 class AtomClient:
     def __init__(self, session: aiohttp.ClientSession, cfg: WatcherConfig) -> None:
         self.session = session
         self.cfg = cfg
-        self._partnership_urls = cfg.atom_partnership_urls
-        self._round_robin_index = 0
+        self._partnership_url = cfg.atom_partnership_url
         self._quota_backoff_until_monotonic = 0.0
 
     def _headers(self, api_key: str) -> dict[str, str]:
@@ -366,6 +292,8 @@ class AtomClient:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
             headers["X-API-Key"] = api_key
+        if self.cfg.atom_user_id:
+            headers["X-User-Id"] = self.cfg.atom_user_id
         return headers
 
     async def _humanized_delay(self) -> None:
@@ -401,7 +329,7 @@ class AtomClient:
     async def _request_json_with_retry(
         self,
         method: str,
-        urls: tuple[str, ...],
+        url: str,
         *,
         headers: Optional[dict[str, str]] = None,
         params: Optional[dict[str, Any]] = None,
@@ -409,14 +337,11 @@ class AtomClient:
         context_label: str,
         suppress_on_4xx: bool = False,
     ) -> Optional[Any]:
-        if not urls:
+        if not url:
             return None
 
         last_error: Optional[str] = None
         for attempt in range(1, self.cfg.max_retry_attempts + 1):
-            url_index = self._round_robin_index
-            url = urls[url_index]
-            self._round_robin_index = (self._round_robin_index + 1) % len(urls)
             await self._humanized_delay()
             try:
                 async with self.session.request(
@@ -485,14 +410,14 @@ class AtomClient:
         raise RuntimeError(f"{context_label} failed after retries")
 
     async def fetch_partnership_domains(self) -> list[DomainOpportunity]:
-        if not self._partnership_urls:
-            LOGGER.warning("ATOM_PARTNERSHIP_API_URL(S) is not set; no domains fetched.")
+        if not self._partnership_url:
+            LOGGER.warning("ATOM_PARTNERSHIP_API_URL is not set; no domains fetched.")
             return []
 
         payload = await self._request_json_with_retry(
             "GET",
-            self._partnership_urls,
-            headers=self._headers(self.cfg.atom_partnership_api_key),
+            self._partnership_url,
+            headers=self._headers(self.cfg.atom_api_key),
             context_label="Partnership API",
         )
         if payload is None:
@@ -557,12 +482,11 @@ class AtomClient:
             try:
                 async with self.session.post(
                     self.cfg.atom_appraisal_url,
-                    headers=self._headers(self.cfg.atom_appraisal_api_key),
+                    headers=self._headers(self.cfg.atom_appraisal_key),
                     json=payload,
                     proxy=self.cfg.proxy_url or None,
                 ) as response:
                     body_text = await response.text()
-                    lowered = body_text.lower()
 
                     if response.status == 429:
                         self._note_rate_limit()
@@ -576,10 +500,6 @@ class AtomClient:
                         continue
 
                     if response.status != 200:
-                        if any(token in lowered for token in APPRAISAL_FALLBACK_TOKENS) or response.status in {402, 403}:
-                            raise AppraisalUnavailableError(
-                                f"AI appraisal unavailable (status={response.status}): {body_text[:240]}"
-                            )
                         if 500 <= response.status < 600:
                             wait_seconds = self._backoff_seconds(attempt)
                             LOGGER.warning(
@@ -637,110 +557,6 @@ class AtomClient:
 
         return float(value)
 
-    async def seo_backlinks_bonus(self, domain: str) -> tuple[float, str]:
-        if not self.cfg.seo_api_key:
-            LOGGER.debug("Skipping SEO / Backlinks Check - No API Key")
-            return 0.0, "skipped_no_key"
-        if not self.cfg.seo_api_url:
-            LOGGER.debug("Skipping SEO / Backlinks Check - No API URL")
-            return 0.0, "skipped_no_url"
-
-        try:
-            data = await self._request_json_with_retry(
-                "GET",
-                (self.cfg.seo_api_url,),
-                headers=self._headers(self.cfg.seo_api_key),
-                params={"domain": domain},
-                context_label="SEO API",
-                suppress_on_4xx=True,
-            )
-        except Exception as exc:
-            LOGGER.debug("Skipping SEO / Backlinks Check - %s", exc)
-            return 0.0, "request_failed"
-        if data is None:
-            return 0.0, "skipped_4xx"
-        if not isinstance(data, dict):
-            return 0.0, "invalid_payload"
-
-        seo_score = parse_float(data.get("authority"))
-        if seo_score is None:
-            seo_score = parse_float(data.get("backlinks"))
-        if seo_score is not None and seo_score > 0:
-            return self.cfg.seo_bonus_points, "seo_signal_detected"
-        return 0.0, "no_signal"
-
-    async def search_volume_bonus(self, domain: str) -> tuple[float, str]:
-        if not self.cfg.search_volume_api_key:
-            LOGGER.debug("Skipping Search Volume Check - No API Key")
-            return 0.0, "skipped_no_key"
-        if not self.cfg.search_volume_api_url:
-            LOGGER.debug("Skipping Search Volume Check - No API URL")
-            return 0.0, "skipped_no_url"
-
-        keyword = domain.split(".", 1)[0]
-        try:
-            data = await self._request_json_with_retry(
-                "GET",
-                (self.cfg.search_volume_api_url,),
-                headers=self._headers(self.cfg.search_volume_api_key),
-                params={"keyword": keyword},
-                context_label="Search Volume API",
-                suppress_on_4xx=True,
-            )
-        except Exception as exc:
-            LOGGER.debug("Skipping Search Volume Check - %s", exc)
-            return 0.0, "request_failed"
-        if data is None:
-            return 0.0, "skipped_4xx"
-        if not isinstance(data, dict):
-            return 0.0, "invalid_payload"
-
-        if "search_volume" in data:
-            volume = parse_float(data.get("search_volume"))
-        else:
-            volume = parse_float(data.get("volume"))
-        if volume is not None and volume > 0:
-            return self.cfg.search_volume_bonus_points, "volume_signal_detected"
-        return 0.0, "no_signal"
-
-    async def historical_sales_bonus(self, domain: str) -> tuple[float, str]:
-        if not self.cfg.namebio_api_key:
-            LOGGER.debug("Skipping Historical Sales Check - No API Key")
-            return 0.0, "skipped_no_key"
-        if not self.cfg.namebio_api_url:
-            LOGGER.debug("Skipping Historical Sales Check - No API URL")
-            return 0.0, "skipped_no_url"
-
-        keyword = domain.split(".", 1)[0]
-        try:
-            data = await self._request_json_with_retry(
-                "GET",
-                (self.cfg.namebio_api_url,),
-                headers=self._headers(self.cfg.namebio_api_key),
-                params={"keyword": keyword},
-                context_label="Historical Sales API",
-                suppress_on_4xx=True,
-            )
-        except Exception as exc:
-            LOGGER.debug("Skipping Historical Sales Check - %s", exc)
-            return 0.0, "request_failed"
-        if data is None:
-            return 0.0, "skipped_4xx"
-
-        if not isinstance(data, dict):
-            return 0.0, "invalid_payload"
-        if "sales_count" in data:
-            sales_count = parse_float(data.get("sales_count"))
-        else:
-            sales_count = parse_float(data.get("count"))
-        has_sales = bool(sales_count is not None and sales_count > 0)
-        if not has_sales and isinstance(data.get("sales"), list):
-            has_sales = len(data["sales"]) > 0
-        if has_sales:
-            return self.cfg.historical_sales_bonus_points, "historical_sales_detected"
-        return 0.0, "no_signal"
-
-
 async def evaluate_opportunity(
     client: AtomClient,
     opportunity: DomainOpportunity,
@@ -753,41 +569,10 @@ async def evaluate_opportunity(
         estimated = ai_value
         LOGGER.info("Valuation method=AI domain=%s estimated=$%.2f", opportunity.domain, estimated)
     except AppraisalUnavailableError as exc:
-        estimated, rule_reason = score_with_internal_rules(opportunity.domain, cfg)
-        method = "rule_based_fallback"
-        reason = f"{rule_reason}; fallback_reason={exc}"
-        LOGGER.warning(
-            "Valuation method=FALLBACK domain=%s estimated=$%.2f reason=%s",
-            opportunity.domain,
-            estimated,
-            exc,
-        )
-
-    bonus_total = 0.0
-    bonus_parts: list[str] = []
-    for check_name, bonus_fn in (
-        ("seo", client.seo_backlinks_bonus),
-        ("search_volume", client.search_volume_bonus),
-        ("historical_sales", client.historical_sales_bonus),
-    ):
-        try:
-            bonus, detail = await bonus_fn(opportunity.domain)
-        except Exception as exc:
-            LOGGER.debug("Skipping %s bonus check due to runtime error: %s", check_name, exc)
-            continue
-        if bonus > 0:
-            bonus_total += bonus
-            bonus_parts.append(f"{check_name}=+{bonus:.2f}({detail})")
-
-    if bonus_total > 0:
-        estimated += bonus_total
-        reason = f"{reason}; bonus_total=+{bonus_total:.2f}; {', '.join(bonus_parts)}"
-        LOGGER.info(
-            "Applied optional bonuses domain=%s total_bonus=$%.2f details=%s",
-            opportunity.domain,
-            bonus_total,
-            "; ".join(bonus_parts),
-        )
+        raise AppraisalUnavailableError(
+            "Atom appraisal required for scoring. Ensure ATOM_APPRAISAL_API_URL and "
+            f"ATOM_APPRAISAL_KEY are configured and valid. Details: {exc}"
+        ) from exc
 
     margin_usd = estimated - opportunity.ask_price_usd
     ratio = estimated / opportunity.ask_price_usd if opportunity.ask_price_usd > 0 else 0.0
@@ -848,17 +633,19 @@ async def emit_alert(
 
 async def watch_events(app: Application, chat_id: int) -> None:
     cfg = WatcherConfig.from_env()
+    validate_required_atom_config(cfg)
     store = AlertStore(cfg.db_path)
     timeout = aiohttp.ClientTimeout(total=cfg.request_timeout_seconds)
 
     LOGGER.info(
-        "Starting Atom watcher (default_poll=%ss, eco=%ss, turbo=%ss, turbo_hours=%s, partnership=%s, appraisal=%s, proxy=%s, delay=%.2f-%.2fs)",
+        "Starting Atom watcher (default_poll=%ss, eco=%ss, turbo=%ss, turbo_hours=%s, partnership=%s, appraisal=%s, user_id=%s, proxy=%s, delay=%.2f-%.2fs)",
         cfg.poll_seconds,
         cfg.eco_poll_seconds,
         cfg.turbo_poll_seconds,
         cfg.turbo_hours_utc,
         bool(cfg.atom_partnership_url),
         bool(cfg.atom_appraisal_url),
+        bool(cfg.atom_user_id),
         bool(cfg.proxy_url),
         cfg.human_delay_min_seconds,
         cfg.human_delay_max_seconds,
