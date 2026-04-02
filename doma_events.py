@@ -58,6 +58,12 @@ class DomainOpportunity:
 
 @dataclass(frozen=True)
 class ValuationResult:
+    """Result of domain valuation and margin gating.
+
+    brandability_score is an optional numeric signal from Atom appraisal.
+    root_word_analysis is an optional structured payload from Atom appraisal.
+    """
+
     estimated_value_usd: float
     method: str
     reason: str
@@ -657,6 +663,10 @@ class AtomClient:
         key = domain.lower()
         expires_at = asyncio.get_running_loop().time() + self.cfg.appraisal_cache_ttl_seconds
         async with self._appraisal_cache_lock:
+            now = asyncio.get_running_loop().time()
+            expired_keys = [cached_key for cached_key, (expiry, _) in self._appraisal_cache.items() if expiry <= now]
+            for expired_key in expired_keys:
+                self._appraisal_cache.pop(expired_key, None)
             self._appraisal_cache[key] = (expires_at, payload.copy())
 
     async def appraise_with_atom_ai(self, domain: str) -> dict[str, Any]:
@@ -975,6 +985,7 @@ async def watch_events(app: Application, chat_id: int) -> None:
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
         client = AtomClient(session, cfg)
+        appraisal_semaphore = asyncio.Semaphore(cfg.appraisal_concurrency)
 
         try:
             while True:
@@ -1013,8 +1024,6 @@ async def watch_events(app: Application, chat_id: int) -> None:
                     _, _, opportunity = heapq.heappop(priority_heap)
                     evaluations_left -= 1
                     candidates.append(opportunity)
-
-                appraisal_semaphore = asyncio.Semaphore(cfg.appraisal_concurrency)
 
                 async def evaluate_with_guard(
                     candidate: DomainOpportunity,
