@@ -830,6 +830,10 @@ def _normalize_tld(value: str) -> str:
     return raw if raw.startswith(".") else f".{raw}"
 
 
+def _effective_allowed_tlds(cfg: WatcherConfig) -> set[str]:
+    return set(cfg.allowed_tlds).union(PRIORITY_TLDS)
+
+
 def _is_priority_tld_domain(domain: str) -> bool:
     clean = str(domain or "").strip().lower()
     if "." not in clean:
@@ -846,7 +850,9 @@ def _parse_item_domain(item: dict[str, Any], fallback_domain: str = "") -> str:
     tld = _normalize_tld(str(item.get("tld") or item.get("zone") or "").strip().lower())
     if sld and tld:
         return f"{sld}{tld}"
-    return str(fallback_domain or "").strip().lower()
+    if fallback_domain:
+        return str(fallback_domain).strip().lower()
+    return ""
 
 
 def _domain_status_from_item(item: dict[str, Any]) -> tuple[bool, str]:
@@ -1148,8 +1154,7 @@ def _chat_filter_matches(
 def build_candidate_domains(vip_db: dict[str, VipRecord], cfg: WatcherConfig) -> list[str]:
     """Build candidate domains from VIP roots and high-value keyword permutations across allowed TLDs."""
     domains: set[str] = set()
-    effective_tlds = set(cfg.allowed_tlds)
-    effective_tlds.update(PRIORITY_TLDS)
+    effective_tlds = _effective_allowed_tlds(cfg)
     for root in vip_db.keys():
         normalized_root = root.strip().lower()
         if not normalized_root:
@@ -1259,8 +1264,8 @@ async def fetch_spaceship_domains(app: Application, chat_id: int) -> dict[str, i
             client = SpaceshipClient(session, cfg)
             vip_folder = Path(__file__).with_name("vip_data")
             active_vip_db = get_vip_database(vip_folder)
+            cfg.allowed_tlds = _effective_allowed_tlds(cfg)
             candidate_domains = build_candidate_domains(active_vip_db, cfg)
-            cfg.allowed_tlds.update(PRIORITY_TLDS)
             if not candidate_domains:
                 summary = {
                     "domains_checked": 0,
