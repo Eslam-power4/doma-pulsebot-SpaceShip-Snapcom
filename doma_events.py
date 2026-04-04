@@ -26,6 +26,8 @@ MIN_RETRY_BASE_SECONDS = 0.2
 MIN_BACKOFF_SECONDS = 1.0
 MIN_QUOTA_COOLDOWN_SECONDS = 30
 MIN_CIRCUIT_BREAKER_SECONDS = 30
+GODADDY_PRICE_MICROS_THRESHOLD = 100000
+DEFAULT_FALLBACK_ASK_PRICE_USD = 10.0
 
 
 class GoDaddyCircuitOpenError(Exception):
@@ -308,12 +310,15 @@ def _normalize_godaddy_price(raw_price: Any) -> Optional[float]:
     parsed = parse_float(raw_price)
     if parsed is None:
         return None
-    if parsed >= 100000:
+    # GoDaddy availability API may return large numeric prices in micros.
+    # This normalizes all values at/above threshold to USD by dividing by 1,000,000.
+    if parsed >= GODADDY_PRICE_MICROS_THRESHOLD:
         return round(parsed / 1_000_000.0, 2)
     return round(parsed, 2)
 
 
 def score_with_internal_rules(domain: str, cfg: WatcherConfig) -> tuple[float, float, str]:
+    """Return (estimated_value_usd, brandability_score, reason_text) using local heuristics."""
     sld = domain.split(".", 1)[0].lower()
     tld = domain.rpartition(".")[2].lower()
     tld_pref = f".{tld}" if tld else ""
@@ -550,7 +555,12 @@ class GoDaddyClient:
 
         ask_price = _normalize_godaddy_price(payload.get("price"))
         if ask_price is None or ask_price <= 0:
-            ask_price = 10.0
+            LOGGER.warning(
+                "GoDaddy price missing/invalid for %s; using fallback ask price $%.2f",
+                normalized_domain,
+                DEFAULT_FALLBACK_ASK_PRICE_USD,
+            )
+            ask_price = DEFAULT_FALLBACK_ASK_PRICE_USD
 
         status_text = str(payload.get("status") or "").strip() or "Available"
 
@@ -718,6 +728,7 @@ def _chat_filter_matches(
 
 
 def build_candidate_domains(vip_db: dict[str, VipRecord], cfg: WatcherConfig) -> list[str]:
+    """Build candidate domains from VIP roots and high-value keyword permutations across allowed TLDs."""
     domains: set[str] = set()
     for root in vip_db.keys():
         normalized_root = root.strip().lower()
@@ -731,6 +742,16 @@ def build_candidate_domains(vip_db: dict[str, VipRecord], cfg: WatcherConfig) ->
             domains.add(f"get{keyword}{tld}")
             domains.add(f"my{keyword}{tld}")
     return sorted(domains)
+
+
+def select_circular_batch(items: list[str], cursor: int, batch_size: int) -> tuple[list[str], int]:
+    """Return a circular batch and next cursor for stable round-robin scanning."""
+    if not items or batch_size <= 0:
+        return [], 0
+    start = cursor % len(items)
+    batch = [items[(start + idx) % len(items)] for idx in range(min(batch_size, len(items)))]
+    next_cursor = (start + len(batch)) % len(items)
+    return batch, next_cursor
 
 
 async def watch_events(app: Application, chat_id: int) -> None:
@@ -802,12 +823,11 @@ async def watch_events(app: Application, chat_id: int) -> None:
                     continue
 
                 limit = min(cfg.max_domains_per_cycle, len(candidate_domains))
-                if domain_cursor >= len(candidate_domains):
-                    domain_cursor = 0
-                selected_domains = candidate_domains[domain_cursor : domain_cursor + limit]
-                if len(selected_domains) < limit:
-                    selected_domains += candidate_domains[: limit - len(selected_domains)]
-                domain_cursor = (domain_cursor + limit) % len(candidate_domains)
+                selected_domains, domain_cursor = select_circular_batch(
+                    candidate_domains,
+                    domain_cursor,
+                    limit,
+                )
 
                 async def check_with_guard(domain: str) -> Optional[DomainOpportunity]:
                     async with scan_semaphore:
