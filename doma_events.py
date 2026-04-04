@@ -1093,18 +1093,21 @@ async def watch_events(app: Application, chat_id: int) -> None:
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
         client = AtomClient(session, cfg)
-        appraisal_semaphore = asyncio.Semaphore(min(cfg.appraisal_concurrency, cfg.scan_concurrency))
+        appraisal_semaphore = asyncio.Semaphore(cfg.appraisal_concurrency)
         scan_semaphore = asyncio.Semaphore(cfg.scan_concurrency)
         vip_folder = Path(__file__).with_name("vip_data")
+        current_vip_db = get_vip_database(vip_folder)
 
         async def vip_reload_loop() -> None:
+            nonlocal current_vip_db
             while True:
-                await asyncio.sleep(cfg.vip_reload_seconds)
                 try:
                     refreshed = reload_vip_database(vip_folder)
+                    current_vip_db = refreshed
                     LOGGER.info("VIP DB reloaded entries=%s", len(refreshed))
                 except Exception as exc:
                     LOGGER.warning("VIP DB reload failed: %s", exc)
+                await asyncio.sleep(cfg.vip_reload_seconds)
 
         vip_reload_task = asyncio.create_task(vip_reload_loop())
 
@@ -1171,7 +1174,6 @@ async def watch_events(app: Application, chat_id: int) -> None:
                             LOGGER.exception("Failed to evaluate %s: %s", candidate.domain, exc)
                             return candidate, None
 
-                current_vip_db = get_vip_database(vip_folder)
                 vip_candidates: list[DomainOpportunity] = []
                 non_vip_candidates: list[DomainOpportunity] = []
                 for item in candidates:
