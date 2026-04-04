@@ -1,0 +1,101 @@
+﻿القطاع,الاختصار,التقييم,المعنى بالإنجليزية,المعنى بالعربية
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),VPS,10/10,Virtual Private Server,خادم افتراضي خاص
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),VDS,9.5/10,Virtual Dedicated Server,خادم افتراضي مخصص
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),RDP,10/10,Remote Desktop Protocol,بروتوكول سطح المكتب البعيد
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),COLO,9/10,Colocation,الاستضافة المشتركة (تأجير مساحة سيرفرات)
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),FAAS,9/10,Function as a Service,الوظيفة كخدمة (حوسبة سحابية)
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),BAAS,9.5/10,Backend as a Service,الخلفية كخدمة
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),DBAAS,9/10,Database as a Service,قاعدة البيانات كخدمة
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),DRAAS,9/10,Disaster Recovery as a Service,التعافي من الكوارث كخدمة
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),VPC,9.5/10,Virtual Private Cloud,سحابة افتراضية خاصة
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),SAN,10/10,Storage Area Network,شبكة منطقة التخزين
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),NAS,10/10,Network Attached Storage,التخزين الملحق بالشبكة
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),SLI,8.5/10,Service Level Indicator,مؤشر مستوى الخدمة
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),SLO,8.5/10,Service Level Objective,هدف مستوى الخدمة
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),BCP,9.5/10,Business Continuity Plan,خطة استمرارية الأعمال
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),KVM,9/10,Kernel-based Virtual Machine,آلة افتراضية تعتمد على النواة
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),VNC,9/10,Virtual Network Computing,حوسبة الشبكة الافتراضية
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),LAMP,9.5/10,Linux Apache MySQL PHP,حزمة برمجيات السيرفرات الشهيرة
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),WAMP,9/10,Windows Apache MySQL PHP,حزمة سيرفرات ويندوز
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),XAAS,8.5/10,Anything as a Service,أي شيء كخدمة
+الاستضافة والبنية التحتية السحابية (Cloud & Hosting),VDI,9/10,Virtual Desktop Infrastructure,البنية التحتية لسطح المكتب الافتراضي
+الطب النفسي والصحة العقلية (Mental Health),CBT,10/10,Cognitive Behavioral Therapy,العلاج السلوكي المعرفي
+الطب النفسي والصحة العقلية (Mental Health),DBT,9.5/10,Dialectical Behavior Therapy,العلاج السلوكي الجدلي
+الطب النفسي والصحة العقلية (Mental Health),EMDR,10/10,Eye Movement Desensitization and Reprocessing,إزالة التحسس وإعادة المعالجة بحركة العين
+الطب النفسي والصحة العقلية (Mental Health),ACT,9/10,Acceptance and Commitment Therapy,علاج القبول والالتزام
+الطب النفسي والصحة العقلية (Mental Health),PTSD,10/10,Post-Traumatic Stress Disorder,اضطراب ما بعد الصدمة
+الطب النفسي والصحة العقلية (Mental Health),ADHD,10/10,Attention-Deficit Hyperactivity Disorder,اضطراب فرط الحركة ونقص الانتباه
+الطب النفسي والصحة العقلية (Mental Health),OCD,10/10,Obsessive-Compulsive Disorder,اضطراب الوسواس القهري
+الطب النفسي والصحة العقلية (Mental Health),GAD,9/10,Generalized Anxiety Disorder,اضطراب القلق العام
+الطب النفسي والصحة العقلية (Mental Health),MDD,9/10,Major Depressive Disorder,اضطراب الاكتئاب الشديد
+الطب النفسي والصحة العقلية (Mental Health),ASD,9.5/10,Autism Spectrum Disorder,اضطراب طيف التوحد
+الطب النفسي والصحة العقلية (Mental Health),BPD,9/10,Borderline Personality Disorder,اضطراب الشخصية الحدية
+الطب النفسي والصحة العقلية (Mental Health),SUD,8.5/10,Substance Use Disorder,اضطراب تعاطي المخدرات
+الطب النفسي والصحة العقلية (Mental Health),APA,10/10,American Psychological Association,الجمعية الأمريكية لعلم النفس
+الطب النفسي والصحة العقلية (Mental Health),DSM,9.5/10,Diagnostic and Statistical Manual,الدليل التشخيصي والإحصائي
+الطب النفسي والصحة العقلية (Mental Health),LPC,9/10,Licensed Professional Counselor,مستشار مهني مرخص
+الطب النفسي والصحة العقلية (Mental Health),LCSW,9/10,Licensed Clinical Social Worker,أخصائي اجتماعي إكلينيكي مرخص
+الطب النفسي والصحة العقلية (Mental Health),MFT,9/10,Marriage and Family Therapist,معالج الزواج والأسرة
+الطب النفسي والصحة العقلية (Mental Health),TMS,8.5/10,Transcranial Magnetic Stimulation,التحفيز المغناطيسي عبر الجمجمة
+الطب النفسي والصحة العقلية (Mental Health),ECT,8/10,Electroconvulsive Therapy,العلاج بالصدمات الكهربائية
+الطب النفسي والصحة العقلية (Mental Health),IOP,8.5/10,Intensive Outpatient Program,برنامج العيادات الخارجية المكثف
+المشتريات وسلاسل التوريد (Procurement),RFT,9/10,Request for Tender,طلب عطاء
+المشتريات وسلاسل التوريد (Procurement),PO,10/10,Purchase Order,أمر شراء
+المشتريات وسلاسل التوريد (Procurement),PR,10/10,Purchase Requisition,طلب شراء
+المشتريات وسلاسل التوريد (Procurement),GRN,9/10,Goods Receipt Note,مذكرة استلام البضائع
+المشتريات وسلاسل التوريد (Procurement),VMI,9.5/10,Vendor Managed Inventory,المخزون المدار بواسطة المورد
+المشتريات وسلاسل التوريد (Procurement),SRM,9.5/10,Supplier Relationship Management,إدارة علاقات الموردين
+المشتريات وسلاسل التوريد (Procurement),ABC,8.5/10,Activity-Based Costing,التكلفة على أساس النشاط
+المشتريات وسلاسل التوريد (Procurement),MRO,9.5/10,Maintenance Repair and Operations,الصيانة والإصلاح والعمليات
+المشتريات وسلاسل التوريد (Procurement),EOQ,9/10,Economic Order Quantity,كمية الطلب الاقتصادي
+المشتريات وسلاسل التوريد (Procurement),MRP,10/10,Material Requirements Planning,تخطيط متطلبات المواد
+المشتريات وسلاسل التوريد (Procurement),COA,9/10,Chart of Accounts,دليل الحسابات
+المشتريات وسلاسل التوريد (Procurement),EDI,10/10,Electronic Data Interchange,التبادل الإلكتروني للبيانات
+المشتريات وسلاسل التوريد (Procurement),ASN,8.5/10,Advance Ship Notice,إشعار الشحن المسبق
+المشتريات وسلاسل التوريد (Procurement),AWB,10/10,Air Waybill,بوليصة الشحن الجوي
+المشتريات وسلاسل التوريد (Procurement),MOV,8.5/10,Minimum Order Value,الحد الأدنى لقيمة الطلب
+المشتريات وسلاسل التوريد (Procurement),TAT,9/10,Turnaround Time,وقت الاستجابة (أو الإنجاز)
+المشتريات وسلاسل التوريد (Procurement),QA,10/10,Quality Assurance,ضمان الجودة
+المشتريات وسلاسل التوريد (Procurement),QC,10/10,Quality Control,مراقبة الجودة
+المشتريات وسلاسل التوريد (Procurement),ODM,9.5/10,Original Design Manufacturer,الشركة المصنعة للتصميم الأصلي
+المشتريات وسلاسل التوريد (Procurement),CPO,9/10,Chief Procurement Officer,الرئيس التنفيذي للمشتريات
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),CNT,9/10,Carbon Nanotube,أنابيب الكربون النانوية
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),MEMS,9.5/10,Micro-Electromechanical Systems,الأنظمة الكهروميكانيكية الصغرى
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),NEMS,9/10,Nano-Electromechanical Systems,الأنظمة الكهروميكانيكية النانوية
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),AFM,8.5/10,Atomic Force Microscopy,مجهر القوة الذرية
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),SEM,8.5/10,Scanning Electron Microscope,المجهر الإلكتروني الماسح
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),TEM,8.5/10,Transmission Electron Microscopy,المجهر الإلكتروني النافذ
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),STM,8.5/10,Scanning Tunneling Microscope,المجهر النفقي الماسح
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),XRD,8.5/10,X-ray Diffraction,حيود الأشعة السينية
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),CVD,9/10,Chemical Vapor Deposition,الترسيب الكيميائي للبخار
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),PVD,9/10,Physical Vapor Deposition,الترسيب الفيزيائي للبخار
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),OLED,10/10,Organic Light-Emitting Diode,الصمام الثنائي العضوي الباعث للضوء
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),AMOLED,9.5/10,Active-Matrix OLED,مصفوفة نشطة لشاشات OLED
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),LCD,10/10,Liquid Crystal Display,شاشة الكريستال السائل
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),LED,10/10,Light-Emitting Diode,الصمام الثنائي الباعث للضوء
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),QLED,9.5/10,Quantum Dot LED,شاشات النقاط الكمومية
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),CPU,10/10,Central Processing Unit,وحدة المعالجة المركزية
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),GPU,10/10,Graphics Processing Unit,وحدة معالجة الرسومات
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),TPU,9.5/10,Tensor Processing Unit,وحدة معالجة الموتر (للذكاء الاصطناعي)
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),NPU,9.5/10,Neural Processing Unit,وحدة المعالجة العصبية
+تكنولوجيا النانو والمواد والعتاد (Nanotech & Hardware),DPU,9/10,Data Processing Unit,وحدة معالجة البيانات
+الأمن المادي والقياسات الحيوية (Biometrics & Security),CCTV,10/10,Closed-Circuit Television,دائرة تلفزيونية مغلقة (كاميرات المراقبة)
+الأمن المادي والقياسات الحيوية (Biometrics & Security),DVR,10/10,Digital Video Recorder,مسجل الفيديو الرقمي
+الأمن المادي والقياسات الحيوية (Biometrics & Security),NVR,9.5/10,Network Video Recorder,مسجل فيديو الشبكة
+الأمن المادي والقياسات الحيوية (Biometrics & Security),PTZ,9.5/10,Pan-Tilt-Zoom,كاميرات التحريك والإمالة والتكبير
+الأمن المادي والقياسات الحيوية (Biometrics & Security),NFC,10/10,Near-Field Communication,اتصال المدى القريب (للدفع والبوابات)
+الأمن المادي والقياسات الحيوية (Biometrics & Security),EAS,9/10,Electronic Article Surveillance,المراقبة الإلكترونية للمقالات (بوابات السرقة)
+الأمن المادي والقياسات الحيوية (Biometrics & Security),PACS,9.5/10,Physical Access Control System,نظام التحكم في الوصول المادي
+الأمن المادي والقياسات الحيوية (Biometrics & Security),AFIS,9/10,Automated Fingerprint Identification System,نظام التعرف الآلي على بصمات الأصابع
+الأمن المادي والقياسات الحيوية (Biometrics & Security),ABIS,9/10,Automated Biometric Identification System,نظام التعرف البيومتري الآلي
+الأمن المادي والقياسات الحيوية (Biometrics & Security),FAR,8.5/10,False Acceptance Rate,معدل القبول الخاطئ (في البصمة)
+الأمن المادي والقياسات الحيوية (Biometrics & Security),FRR,8.5/10,False Rejection Rate,معدل الرفض الخاطئ
+الأمن المادي والقياسات الحيوية (Biometrics & Security),EER,8/10,Equal Error Rate,معدل الخطأ المتساوي
+الأمن المادي والقياسات الحيوية (Biometrics & Security),ANPR,9.5/10,Automatic Number Plate Recognition,التعرف الآلي على لوحات الأرقام
+الأمن المادي والقياسات الحيوية (Biometrics & Security),PIR,9/10,Passive Infrared Sensor,مستشعر الأشعة تحت الحمراء السلبي (للحركة)
+الأمن المادي والقياسات الحيوية (Biometrics & Security),VDMS,9/10,Video Management System,نظام إدارة الفيديو
+الأمن المادي والقياسات الحيوية (Biometrics & Security),PSIM,9/10,Physical Security Information Management,إدارة معلومات الأمن المادي
+الأمن المادي والقياسات الحيوية (Biometrics & Security),IDS,10/10,Intrusion Detection System,نظام كشف التسلل
+الأمن المادي والقياسات الحيوية (Biometrics & Security),IPS,10/10,Intrusion Prevention System,نظام منع التسلل
+الأمن المادي والقياسات الحيوية (Biometrics & Security),ALPR,9.5/10,Automated License Plate Reader,القارئ الآلي للوحات التراخيص
+الأمن المادي والقياسات الحيوية (Biometrics & Security),GSOC,9/10,Global Security Operations Center,مركز العمليات الأمنية العالمية

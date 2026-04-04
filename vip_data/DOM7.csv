@@ -1,0 +1,101 @@
+﻿القطاع,الاختصار,التقييم,المعنى بالإنجليزية,المعنى بالعربية
+المدن الذكية والتكنولوجيا الحكومية (GovTech),G2C,10/10,Government to Citizen,من الحكومة إلى المواطن
+المدن الذكية والتكنولوجيا الحكومية (GovTech),G2B,9.5/10,Government to Business,من الحكومة إلى الأعمال
+المدن الذكية والتكنولوجيا الحكومية (GovTech),PPP,10/10,Public-Private Partnership,الشراكة بين القطاعين العام والخاص
+المدن الذكية والتكنولوجيا الحكومية (GovTech),ITS,9.5/10,Intelligent Transportation Systems,أنظمة النقل الذكية
+المدن الذكية والتكنولوجيا الحكومية (GovTech),WSN,9/10,Wireless Sensor Networks,شبكات الاستشعار اللاسلكية
+المدن الذكية والتكنولوجيا الحكومية (GovTech),AMI,8.5/10,Advanced Metering Infrastructure,البنية التحتية المتقدمة للعدادات (الذكية)
+المدن الذكية والتكنولوجيا الحكومية (GovTech),V2I,9.5/10,Vehicle-to-Infrastructure,من المركبة إلى البنية التحتية
+المدن الذكية والتكنولوجيا الحكومية (GovTech),C2C,9/10,Citizen to Citizen,من مواطن إلى مواطن
+المدن الذكية والتكنولوجيا الحكومية (GovTech),GOV,10/10,Government,حكومة (مطلوبة جداً)
+المدن الذكية والتكنولوجيا الحكومية (GovTech),MUNI,9/10,Municipal,بلدي / محليات
+المدن الذكية والتكنولوجيا الحكومية (GovTech),DOT,10/10,Department of Transportation,وزارة النقل
+المدن الذكية والتكنولوجيا الحكومية (GovTech),CIV,9.5/10,Civic / Civilian,مدني / مجتمعي
+المدن الذكية والتكنولوجيا الحكومية (GovTech),DMV,10/10,Department of Motor Vehicles,إدارة المركبات الآلية (المرور)
+المدن الذكية والتكنولوجيا الحكومية (GovTech),NPO,9.5/10,Non-Profit Organization,منظمة غير ربحية
+المدن الذكية والتكنولوجيا الحكومية (GovTech),NGO,10/10,Non-Governmental Organization,منظمة غير حكومية
+المدن الذكية والتكنولوجيا الحكومية (GovTech),EGOV,10/10,Electronic Government,الحكومة الإلكترونية
+المدن الذكية والتكنولوجيا الحكومية (GovTech),FOIA,9/10,Freedom of Information Act,قانون حرية المعلومات
+المدن الذكية والتكنولوجيا الحكومية (GovTech),UID,9.5/10,Unique Identification,الهوية الفريدة
+المدن الذكية والتكنولوجيا الحكومية (GovTech),PIV,8.5/10,Personal Identity Verification,التحقق من الهوية الشخصية
+المدن الذكية والتكنولوجيا الحكومية (GovTech),TAX,10/10,Tax,ضريبة
+التصميم الرقمي وتجربة المستخدم (UI/UX),UXD,10/10,User Experience Design,تصميم تجربة المستخدم
+التصميم الرقمي وتجربة المستخدم (UI/UX),IXD,9.5/10,Interaction Design,تصميم التفاعل
+التصميم الرقمي وتجربة المستخدم (UI/UX),UXR,9.5/10,User Experience Research,أبحاث تجربة المستخدم
+التصميم الرقمي وتجربة المستخدم (UI/UX),HCD,9/10,Human-Centered Design,التصميم المتمحور حول الإنسان
+التصميم الرقمي وتجربة المستخدم (UI/UX),VUI,9.5/10,Voice User Interface,واجهة مستخدم صوتية
+التصميم الرقمي وتجربة المستخدم (UI/UX),CUI,9/10,Conversational User Interface,واجهة مستخدم حوارية (للشات بوت)
+التصميم الرقمي وتجربة المستخدم (UI/UX),WIRE,9.5/10,Wireframe,إطار تخطيطي (تصميم مبدئي)
+التصميم الرقمي وتجربة المستخدم (UI/UX),MOCK,9/10,Mockup,نموذج بالحجم الطبيعي (تصميم مرئي)
+التصميم الرقمي وتجربة المستخدم (UI/UX),TUI,8.5/10,Tangible User Interface,واجهة مستخدم ملموسة
+التصميم الرقمي وتجربة المستخدم (UI/UX),RWD,9.5/10,Responsive Web Design,تصميم ويب متجاوب (للشاشات)
+التصميم الرقمي وتجربة المستخدم (UI/UX),AWD,9/10,Adaptive Web Design,تصميم ويب تكيفي
+التصميم الرقمي وتجربة المستخدم (UI/UX),SVG,10/10,Scalable Vector Graphics,الرسومات المتجهة القابلة للتحجيم
+التصميم الرقمي وتجربة المستخدم (UI/UX),PNG,10/10,Portable Network Graphics,رسومات الشبكة المحمولة (صيغة صور)
+التصميم الرقمي وتجربة المستخدم (UI/UX),HEX,10/10,Hexadecimal Color,اللون السداسي العشري (للمصممين)
+التصميم الرقمي وتجربة المستخدم (UI/UX),RGB,10/10,Red Green Blue,نظام الألوان الشاشات
+التصميم الرقمي وتجربة المستخدم (UI/UX),CMYK,10/10,Cyan Magenta Yellow Key,نظام ألوان الطباعة
+التصميم الرقمي وتجربة المستخدم (UI/UX),DPI,9.5/10,Dots Per Inch,نقطة في البوصة (دقة الطباعة)
+التصميم الرقمي وتجربة المستخدم (UI/UX),PPI,9.5/10,Pixels Per Inch,بكسل في البوصة (دقة الشاشة)
+التصميم الرقمي وتجربة المستخدم (UI/UX),WCAG,9/10,Web Content Accessibility Guidelines,إرشادات الوصول لمحتوى الويب
+التصميم الرقمي وتجربة المستخدم (UI/UX),NUI,9.5/10,Natural User Interface,واجهة المستخدم الطبيعية
+الروبوتات والميكاترونكس (Robotics),ROS,10/10,Robot Operating System,نظام تشغيل الروبوتات
+الروبوتات والميكاترونكس (Robotics),AMR,10/10,Autonomous Mobile Robot,روبوت متحرك مستقل
+الروبوتات والميكاترونكس (Robotics),COB,9/10,Collaborative Robot (Cobot),روبوت تعاوني
+الروبوتات والميكاترونكس (Robotics),DOF,9.5/10,Degrees of Freedom,درجات الحرية (لحركة الروبوت)
+الروبوتات والميكاترونكس (Robotics),UGV,9.5/10,Unmanned Ground Vehicle,مركبة أرضية بدون سائق
+الروبوتات والميكاترونكس (Robotics),ASV,9/10,Autonomous Surface Vehicle,مركبة سطحية ذاتية القيادة (بحرية)
+الروبوتات والميكاترونكس (Robotics),UUV,9/10,Unmanned Underwater Vehicle,مركبة تحت الماء بدون طيار
+الروبوتات والميكاترونكس (Robotics),HRI,9.5/10,Human-Robot Interaction,التفاعل بين الإنسان والروبوت
+الروبوتات والميكاترونكس (Robotics),SLAM,10/10,Simultaneous Localization and Mapping,تحديد المواقع ورسم الخرائط المتزامن
+الروبوتات والميكاترونكس (Robotics),IMU,9.5/10,Inertial Measurement Unit,وحدة القياس بالقصور الذاتي (مستشعر)
+الروبوتات والميكاترونكس (Robotics),PID,10/10,Proportional-Integral-Derivative,المتحكم التناسبي التكاملي التفاضلي
+الروبوتات والميكاترونكس (Robotics),MCU,10/10,Microcontroller Unit,وحدة التحكم الدقيقة
+الروبوتات والميكاترونكس (Robotics),PWM,9.5/10,Pulse Width Modulation,تعديل عرض النبضة
+الروبوتات والميكاترونكس (Robotics),GPIO,9.5/10,General-Purpose Input/Output,منافذ الإدخال والإخراج العامة
+الروبوتات والميكاترونكس (Robotics),PCB,10/10,Printed Circuit Board,لوحة الدوائر المطبوعة
+الروبوتات والميكاترونكس (Robotics),SMT,9/10,Surface-Mount Technology,تقنية التثبيت السطحي (للإلكترونيات)
+الروبوتات والميكاترونكس (Robotics),ASIC,9.5/10,Application-Specific Integrated Circuit,دائرة متكاملة مخصصة لتطبيق معين
+الروبوتات والميكاترونكس (Robotics),FPGA,10/10,Field-Programmable Gate Array,مصفوفة البوابات المنطقية القابلة للبرمجة
+الروبوتات والميكاترونكس (Robotics),SOC,10/10,System on a Chip,نظام على شريحة
+الروبوتات والميكاترونكس (Robotics),RTOS,9.5/10,Real-Time Operating System,نظام تشغيل في الوقت الفعلي
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),CAS9,10/10,CRISPR Associated Protein 9,تقنية التعديل الجيني (كريسبر)
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),SNP,9.5/10,Single Nucleotide Polymorphism,تعدد أشكال النوكليوتيدات المفردة
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),PCR,10/10,Polymerase Chain Reaction,تفاعل البوليميراز المتسلسل
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),NGS,10/10,Next-Generation Sequencing,تسلسل الجيل القادم (للجينات)
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),WGS,9.5/10,Whole Genome Sequencing,تسلسل الجينوم الكامل
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),GWAS,9/10,Genome-Wide Association Study,دراسة الارتباط الجينومي
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),QTL,8.5/10,Quantitative Trait Locus,موضع السمة الكمية
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),VNTR,8.5/10,Variable Number Tandem Repeat,التكرار المترادف متغير العدد
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),RFLP,8.5/10,Restriction Fragment Length Polymorphism,تعدد أطوال قطع الحصر
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),MAB,10/10,Monoclonal Antibody,الجسم المضاد وحيد النسل (علاجات متطورة)
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),CART,9.5/10,Chimeric Antigen Receptor T-cell,خلايا تي ذات مستقبلات المستضد الخيمرية (علاج سرطان)
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),IND,9/10,Investigational New Drug,دواء جديد قيد التحقيق
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),CMO,9.5/10,Contract Manufacturing Organization,منظمة التصنيع التعاقدي (للأدوية)
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),CDMO,10/10,Contract Development and Manufacturing,منظمة التطوير والتصنيع التعاقدي
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),GLP,9.5/10,Good Laboratory Practice,الممارسة المخبرية الجيدة
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),CGMP,10/10,Current Good Manufacturing Practice,ممارسات التصنيع الجيدة الحالية
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),SOP,10/10,Standard Operating Procedure,إجراءات التشغيل القياسية
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),QBD,9/10,Quality by Design,الجودة من خلال التصميم
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),BLA,9.5/10,Biologics License Application,تطبيق ترخيص المواد البيولوجية
+التكنولوجيا الحيوية وصناعة الأدوية (Biotech),NCE,9/10,New Chemical Entity,كيان كيميائي جديد (أدوية)
+تكنولوجيا المياه والبيئة (WaterTech),WASH,10/10,Water Sanitation and Hygiene,المياه والصرف الصحي والنظافة
+تكنولوجيا المياه والبيئة (WaterTech),WWTP,9.5/10,Wastewater Treatment Plant,محطة معالجة مياه الصرف الصحي
+تكنولوجيا المياه والبيئة (WaterTech),SWRO,9/10,Seawater Reverse Osmosis,التناضح العكسي لمياه البحر (تحلية)
+تكنولوجيا المياه والبيئة (WaterTech),ZLD,9.5/10,Zero Liquid Discharge,تفريغ سائل صفري (تقنية بيئية)
+تكنولوجيا المياه والبيئة (WaterTech),BOD,9/10,Biochemical Oxygen Demand,الطلب الأوكسجيني البيوكيميائي
+تكنولوجيا المياه والبيئة (WaterTech),TSS,8.5/10,Total Suspended Solids,إجمالي المواد الصلبة العالقة
+تكنولوجيا المياه والبيئة (WaterTech),TDS,10/10,Total Dissolved Solids,إجمالي المواد الصلبة الذائبة
+تكنولوجيا المياه والبيئة (WaterTech),NTU,8.5/10,Nephelometric Turbidity Unit,وحدة التعكر
+تكنولوجيا المياه والبيئة (WaterTech),EPA,10/10,Environmental Protection Agency,وكالة حماية البيئة
+تكنولوجيا المياه والبيئة (WaterTech),IWRM,9/10,Integrated Water Resources Management,الإدارة المتكاملة للموارد المائية
+تكنولوجيا المياه والبيئة (WaterTech),NRW,9/10,Non-Revenue Water,المياه غير المدرة للدخل (الفاقد)
+تكنولوجيا المياه والبيئة (WaterTech),WQI,9/10,Water Quality Index,مؤشر جودة المياه
+تكنولوجيا المياه والبيئة (WaterTech),ORP,8.5/10,Oxidation-Reduction Potential,إمكانية الأكسدة والاختزال
+تكنولوجيا المياه والبيئة (WaterTech),AOP,9.5/10,Advanced Oxidation Process,عملية الأكسدة المتقدمة
+تكنولوجيا المياه والبيئة (WaterTech),MBR,9.5/10,Membrane Bioreactor,المفاعل الحيوي الغشائي
+تكنولوجيا المياه والبيئة (WaterTech),MBBR,9/10,Moving Bed Biofilm Reactor,مفاعل الأغشية الحيوية ذو السرير المتحرك
+تكنولوجيا المياه والبيئة (WaterTech),EDI,8.5/10,Electrodeionization,التأين الكهربائي
+تكنولوجيا المياه والبيئة (WaterTech),GAC,9/10,Granular Activated Carbon,الكربون المنشط الحبيبي (للفلاتر)
+تكنولوجيا المياه والبيئة (WaterTech),PAC,9/10,Powdered Activated Carbon,الكربون المنشط المسحوق
+تكنولوجيا المياه والبيئة (WaterTech),VFD,9.5/10,Variable Frequency Drive,محرك التردد المتغير (لمضخات المياه)

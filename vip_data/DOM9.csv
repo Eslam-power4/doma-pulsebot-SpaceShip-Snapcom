@@ -1,0 +1,101 @@
+﻿القطاع,الاختصار,التقييم,المعنى بالإنجليزية,المعنى بالعربية
+التجميل والعناية الشخصية (BeautyTech),AHA,10/10,Alpha Hydroxy Acid,أحماض الألفا هيدروكسي (مشهورة جداً في العناية بالبشرة)
+التجميل والعناية الشخصية (BeautyTech),BHA,10/10,Beta Hydroxy Acid,أحماض البيتا هيدروكسي
+التجميل والعناية الشخصية (BeautyTech),SPF,10/10,Sun Protection Factor,عامل الحماية من الشمس (صن بلوك)
+التجميل والعناية الشخصية (BeautyTech),INCI,9.5/10,International Nomenclature of Cosmetic Ingredients,التسمية الدولية لمكونات التجميل
+التجميل والعناية الشخصية (BeautyTech),OBM,9/10,Original Brand Manufacturer,الشركة المصنعة للعلامة التجارية الأصلية
+التجميل والعناية الشخصية (BeautyTech),DTC,10/10,Direct to Consumer,البيع المباشر للمستهلك
+التجميل والعناية الشخصية (BeautyTech),NMF,9/10,Natural Moisturizing Factor,عامل الترطيب الطبيعي
+التجميل والعناية الشخصية (BeautyTech),EWG,9.5/10,Environmental Working Group,مجموعة العمل البيئي (لمنتجات التجميل النظيفة)
+التجميل والعناية الشخصية (BeautyTech),TEWL,8.5/10,Transepidermal Water Loss,فقدان الماء عبر البشرة (مصطلح طبي تجميلي)
+التجميل والعناية الشخصية (BeautyTech),UVA,10/10,Ultraviolet A,الأشعة فوق البنفسجية أ
+التجميل والعناية الشخصية (BeautyTech),UVB,10/10,Ultraviolet B,الأشعة فوق البنفسجية ب
+التجميل والعناية الشخصية (BeautyTech),SPA,10/10,Spa and Wellness,منتجع صحي
+التجميل والعناية الشخصية (BeautyTech),SAL,9/10,Salon,صالون
+التجميل والعناية الشخصية (BeautyTech),HBA,9.5/10,Health and Beauty Aids,مساعدات الصحة والجمال
+التجميل والعناية الشخصية (BeautyTech),BTY,9.5/10,Beauty,جمال
+التجميل والعناية الشخصية (BeautyTech),COS,9.5/10,Cosmetics,مستحضرات التجميل
+التجميل والعناية الشخصية (BeautyTech),FRG,9/10,Fragrance,عطور
+التجميل والعناية الشخصية (BeautyTech),SKN,10/10,Skin,بشرة / جلد
+التجميل والعناية الشخصية (BeautyTech),DERM,10/10,Dermatology,طب الأمراض الجلدية
+التجميل والعناية الشخصية (BeautyTech),MAC,10/10,Makeup Art Cosmetics,مستحضرات تجميل (ماركة ومصطلح عالمي)
+طب الأسنان وصحة الفم (DentalTech),DDS,10/10,Doctor of Dental Surgery,دكتور جراحة الأسنان
+طب الأسنان وصحة الفم (DentalTech),DMD,10/10,Doctor of Medicine in Dentistry,دكتور الطب في طب الأسنان
+طب الأسنان وصحة الفم (DentalTech),RDH,9/10,Registered Dental Hygienist,أخصائي صحة أسنان مسجل
+طب الأسنان وصحة الفم (DentalTech),DMF,8.5/10,Decayed Missing Filled,مؤشر تسوس وفقدان وحشو الأسنان
+طب الأسنان وصحة الفم (DentalTech),TMD,9.5/10,Temporomandibular Disorders,اضطرابات المفصل الفكي
+طب الأسنان وصحة الفم (DentalTech),ADA,10/10,American Dental Association,جمعية طب الأسنان الأمريكية
+طب الأسنان وصحة الفم (DentalTech),CDA,9/10,Certified Dental Assistant,مساعد طبيب أسنان معتمد
+طب الأسنان وصحة الفم (DentalTech),ENDO,10/10,Endodontics,طب لب الأسنان (علاج الجذور)
+طب الأسنان وصحة الفم (DentalTech),ORTH,10/10,Orthodontics,تقويم الأسنان
+طب الأسنان وصحة الفم (DentalTech),PERI,9/10,Periodontics,طب دواعم السن (اللثة)
+طب الأسنان وصحة الفم (DentalTech),PEDO,9/10,Pediatric Dentistry,طب أسنان الأطفال
+طب الأسنان وصحة الفم (DentalTech),OMS,9.5/10,Oral and Maxillofacial Surgery,جراحة الفم والوجه والفكين
+طب الأسنان وصحة الفم (DentalTech),OSHA,9.5/10,Occupational Safety and Health Administration,إدارة السلامة والصحة المهنية
+طب الأسنان وصحة الفم (DentalTech),BDS,10/10,Bachelor of Dental Surgery,بكالوريوس جراحة الأسنان
+طب الأسنان وصحة الفم (DentalTech),GDC,9.5/10,General Dental Council,المجلس العام لطب الأسنان
+طب الأسنان وصحة الفم (DentalTech),MDS,9.5/10,Master of Dental Surgery,ماجستير جراحة الأسنان
+طب الأسنان وصحة الفم (DentalTech),OPG,10/10,Orthopantomogram,أشعة بانوراما للأسنان
+طب الأسنان وصحة الفم (DentalTech),CBCT,9.5/10,Cone Beam Computed Tomography,التصوير المقطعي المخروطي (للأسنان)
+طب الأسنان وصحة الفم (DentalTech),FDI,9/10,World Dental Federation,الاتحاد الصيدلاني العالمي / الفيدرالية العالمية لطب الأسنان
+طب الأسنان وصحة الفم (DentalTech),DENT,10/10,Dental,سني / خاص بالأسنان
+الطيران التجاري والخاص (AviationTech),ICAO,10/10,International Civil Aviation Organization,منظمة الطيران المدني الدولي
+الطيران التجاري والخاص (AviationTech),AOG,10/10,Aircraft on Ground,طائرة على الأرض (مصطلح صيانة طارئة غالي جداً)
+الطيران التجاري والخاص (AviationTech),FBO,10/10,Fixed-Base Operator,مشغل قاعدة ثابتة (لخدمات الطائرات الخاصة)
+الطيران التجاري والخاص (AviationTech),ULD,9/10,Unit Load Device,جهاز تحميل الوحدة (حاويات الطائرات)
+الطيران التجاري والخاص (AviationTech),FDR,9.5/10,Flight Data Recorder,مسجل بيانات الرحلة (الصندوق الأسود)
+الطيران التجاري والخاص (AviationTech),IFC,9.5/10,In-Flight Connectivity,الاتصال اللاسلكي أثناء الرحلة
+الطيران التجاري والخاص (AviationTech),IFE,10/10,In-Flight Entertainment,الترفيه على متن الطائرة
+الطيران التجاري والخاص (AviationTech),GSE,9.5/10,Ground Support Equipment,معدات الدعم الأرضي
+الطيران التجاري والخاص (AviationTech),ACM,9/10,Air Cycle Machine,آلة دورة الهواء (تكييف الطائرات)
+الطيران التجاري والخاص (AviationTech),ACMI,10/10,Aircraft Crew Maintenance Insurance,تأجير الطائرات الشامل (مصطلح B2B ضخم)
+الطيران التجاري والخاص (AviationTech),CAA,10/10,Civil Aviation Authority,هيئة الطيران المدني
+الطيران التجاري والخاص (AviationTech),NTSB,9.5/10,National Transportation Safety Board,المجلس الوطني لسلامة النقل
+الطيران التجاري والخاص (AviationTech),CBP,9/10,Customs and Border Protection,الجمارك وحماية الحدود
+الطيران التجاري والخاص (AviationTech),TMC,9.5/10,Travel Management Company,شركة إدارة السفر
+الطيران التجاري والخاص (AviationTech),ULCC,9.5/10,Ultra Low-Cost Carrier,شركة طيران منخفضة التكلفة للغاية
+الطيران التجاري والخاص (AviationTech),NDC,10/10,New Distribution Capability,قدرة التوزيع الجديدة (في حجز التذاكر)
+الطيران التجاري والخاص (AviationTech),AOC,10/10,Air Operator Certificate,شهادة المشغل الجوي
+الطيران التجاري والخاص (AviationTech),OAG,9/10,Official Aviation Guide,الدليل الرسمي للطيران
+الطيران التجاري والخاص (AviationTech),PSS,9.5/10,Passenger Service System,نظام خدمة الركاب
+الطيران التجاري والخاص (AviationTech),ILS,10/10,Instrument Landing System,نظام الهبوط الآلي
+التعدين والمعادن الثمينة (Mining & Metallurgy),LME,10/10,London Metal Exchange,بورصة لندن للمعادن
+التعدين والمعادن الثمينة (Mining & Metallurgy),CME,10/10,Chicago Mercantile Exchange,بورصة شيكاغو التجارية
+التعدين والمعادن الثمينة (Mining & Metallurgy),OPEC,10/10,Organization of the Petroleum Exporting Countries,منظمة الدول المصدرة للنفط
+التعدين والمعادن الثمينة (Mining & Metallurgy),LBMA,9.5/10,London Bullion Market Association,رابطة سوق سبائك لندن (للذهب)
+التعدين والمعادن الثمينة (Mining & Metallurgy),FID,10/10,Final Investment Decision,قرار الاستثمار النهائي (في المشاريع الكبرى)
+التعدين والمعادن الثمينة (Mining & Metallurgy),LOM,9.5/10,Life of Mine,عمر المنجم
+التعدين والمعادن الثمينة (Mining & Metallurgy),ROM,9/10,Run of Mine,المواد المستخرجة من المنجم قبل المعالجة
+التعدين والمعادن الثمينة (Mining & Metallurgy),JORC,9.5/10,Joint Ore Reserves Committee,اللجنة المشتركة لاحتياطيات الخام
+التعدين والمعادن الثمينة (Mining & Metallurgy),PFS,9.5/10,Pre-Feasibility Study,دراسة الجدوى المبدئية
+التعدين والمعادن الثمينة (Mining & Metallurgy),DFS,9.5/10,Definitive Feasibility Study,دراسة الجدوى النهائية
+التعدين والمعادن الثمينة (Mining & Metallurgy),NSR,9/10,Net Smelter Return,عائد المصهر الصافي
+التعدين والمعادن الثمينة (Mining & Metallurgy),TSR,9/10,Total Shareholder Return,إجمالي عائد المساهمين
+التعدين والمعادن الثمينة (Mining & Metallurgy),EIA,10/10,Environmental Impact Assessment,تقييم الأثر البيئي
+التعدين والمعادن الثمينة (Mining & Metallurgy),HME,9.5/10,Heavy Mobile Equipment,المعدات المتنقلة الثقيلة
+التعدين والمعادن الثمينة (Mining & Metallurgy),SAG,8.5/10,Semi-Autogenous Grinding,طحن شبه ذاتي (للمعادن)
+التعدين والمعادن الثمينة (Mining & Metallurgy),CIP,9.5/10,Carbon in Pulp,استخلاص الذهب باستخدام الكربون
+التعدين والمعادن الثمينة (Mining & Metallurgy),CIL,9.5/10,Carbon in Leach,الكربون في الرشح (طريقة استخراج الذهب)
+التعدين والمعادن الثمينة (Mining & Metallurgy),DRI,9/10,Direct Reduced Iron,الحديد المكتزل المباشر
+التعدين والمعادن الثمينة (Mining & Metallurgy),PGM,10/10,Platinum Group Metals,مجموعة معادن البلاتين
+التعدين والمعادن الثمينة (Mining & Metallurgy),REE,10/10,Rare Earth Elements,العناصر الأرضية النادرة
+علوم المناخ والبيئة والأرصاد (WeatherTech),WMO,10/10,World Meteorological Organization,المنظمة العالمية للأرصاد الجوية
+علوم المناخ والبيئة والأرصاد (WeatherTech),NWS,10/10,National Weather Service,خدمة الطقس الوطنية
+علوم المناخ والبيئة والأرصاد (WeatherTech),IPCC,10/10,Intergovernmental Panel on Climate Change,الهيئة الحكومية الدولية المعنية بتغير المناخ
+علوم المناخ والبيئة والأرصاد (WeatherTech),COP,10/10,Conference of the Parties,مؤتمر الأطراف (قمة المناخ)
+علوم المناخ والبيئة والأرصاد (WeatherTech),GCM,9/10,Global Climate Model,النموذج المناخي العالمي
+علوم المناخ والبيئة والأرصاد (WeatherTech),AWS,10/10,Automated Weather Station,محطة طقس آلية (وأيضاً خدمات أمازون)
+علوم المناخ والبيئة والأرصاد (WeatherTech),GOES,9.5/10,Geostationary Operational Environmental Satellite,القمر الصناعي البيئي الثابت
+علوم المناخ والبيئة والأرصاد (WeatherTech),MET,10/10,Meteorology,علم الأرصاد الجوية
+علوم المناخ والبيئة والأرصاد (WeatherTech),CLIM,10/10,Climate,مناخ
+علوم المناخ والبيئة والأرصاد (WeatherTech),ENV,10/10,Environment,بيئة
+علوم المناخ والبيئة والأرصاد (WeatherTech),ECO,10/10,Ecology / Economy,علم البيئة / اقتصاد
+علوم المناخ والبيئة والأرصاد (WeatherTech),AQI,10/10,Air Quality Index,مؤشر جودة الهواء
+علوم المناخ والبيئة والأرصاد (WeatherTech),WTH,10/10,Weather,الطقس
+علوم المناخ والبيئة والأرصاد (WeatherTech),ENSO,9.5/10,El Nino-Southern Oscillation,ظاهرة النينيو المناخية
+علوم المناخ والبيئة والأرصاد (WeatherTech),SST,9/10,Sea Surface Temperature,درجة حرارة سطح البحر
+علوم المناخ والبيئة والأرصاد (WeatherTech),EWS,9.5/10,Early Warning System,نظام الإنذار المبكر
+علوم المناخ والبيئة والأرصاد (WeatherTech),UHF,10/10,Ultra High Frequency,ترددات فائقة العلو (للرادارات الجوية)
+علوم المناخ والبيئة والأرصاد (WeatherTech),EMF,10/10,Electromagnetic Field,المجال الكهرومغناطيسي
+علوم المناخ والبيئة والأرصاد (WeatherTech),CFC,9.5/10,Chlorofluorocarbon,مركبات الكربون الكلورية فلورية
+علوم المناخ والبيئة والأرصاد (WeatherTech),PPM,10/10,Parts Per Million,جزء في المليون (لقياس التلوث)
