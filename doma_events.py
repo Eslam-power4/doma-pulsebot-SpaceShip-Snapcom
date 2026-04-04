@@ -23,6 +23,9 @@ from vip_database import VipRecord, get_vip_database, reload_vip_database
 LOGGER = logging.getLogger(__name__)
 
 # ─── Tuning constants ────────────────────────────────────────────────────────
+MAIN_CHAT_ID = '-1003736596502'
+TELEGRAM_TOPICS_MAP = { '.dev': 23, '.app': 3, '.my': 2, '.tech': 4, '.com': 5, '.ae': 6 }
+
 MIN_POLL_SECONDS = 1
 MIN_RETRY_ATTEMPTS = 1
 MIN_RETRY_BASE_SECONDS = 0.2
@@ -874,6 +877,45 @@ def format_alert(opportunity: DomainOpportunity, valuation: ValuationResult) -> 
     )
 
 
+async def send_telegram_notification(
+    app: Application,
+    domain_name: str,
+    text: str,
+    *,
+    parse_mode: str = "HTML",
+    reply_markup: InlineKeyboardMarkup | None = None,
+    disable_web_page_preview: bool = True,
+) -> None:
+    clean_domain = (domain_name or "").strip().lower().rstrip(".")
+    _, _, ext = clean_domain.rpartition(".")
+    tld = f".{ext}" if ext else ""
+
+    payload: dict[str, Any] = {
+        "chat_id": int(MAIN_CHAT_ID),
+        "text": text,
+        "parse_mode": parse_mode,
+        "disable_web_page_preview": disable_web_page_preview,
+    }
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+
+    thread_id = TELEGRAM_TOPICS_MAP.get(tld)
+    if thread_id is not None:
+        payload["message_thread_id"] = thread_id
+
+    try:
+        await app.bot.send_message(**payload)
+    except Exception:
+        LOGGER.exception(
+            "Telegram send failed chat_id=%s thread_id=%s tld=%s domain=%s",
+            payload["chat_id"],
+            payload.get("message_thread_id"),
+            tld or "N/A",
+            domain_name,
+        )
+        raise
+
+
 async def emit_alert(
     app: Application,
     chat_id: int,
@@ -886,10 +928,11 @@ async def emit_alert(
         rows.append([InlineKeyboardButton("🔗 Open Listing", url=opportunity.listing_url)])
     rows.append([InlineKeyboardButton("📊 Whois", url=opportunity.whois_url)])
     keyboard = InlineKeyboardMarkup(rows)
-    await app.bot.send_message(
-        chat_id=chat_id,
+    await send_telegram_notification(
+        app=app,
+        domain_name=opportunity.domain,
         text=format_alert(opportunity, valuation),
-        parse_mode=ParseMode.HTML,
+        parse_mode=str(ParseMode.HTML),
         reply_markup=keyboard,
         disable_web_page_preview=True,
     )
@@ -933,10 +976,11 @@ async def emit_general_find_alert(
     rows = [[InlineKeyboardButton("🛒 Review on Spaceship", url=buy_url)]]
     rows.append([InlineKeyboardButton("📊 Whois", url=opportunity.whois_url)])
     keyboard = InlineKeyboardMarkup(rows)
-    await app.bot.send_message(
-        chat_id=chat_id,
+    await send_telegram_notification(
+        app=app,
+        domain_name=opportunity.domain,
         text=format_general_find_alert(opportunity),
-        parse_mode=ParseMode.HTML,
+        parse_mode=str(ParseMode.HTML),
         reply_markup=keyboard,
         disable_web_page_preview=True,
     )
@@ -971,10 +1015,11 @@ async def emit_vip_alert(
     buy_url = f"https://www.spaceship.com/domain-search/?query={opportunity.domain}"
     rows = [[InlineKeyboardButton("🔗 BUY NOW / SNIPE", url=buy_url)]]
     keyboard = InlineKeyboardMarkup(rows)
-    await app.bot.send_message(
-        chat_id=chat_id,
+    await send_telegram_notification(
+        app=app,
+        domain_name=opportunity.domain,
         text=format_vip_alert(opportunity, vip),
-        parse_mode=ParseMode.HTML,
+        parse_mode=str(ParseMode.HTML),
         reply_markup=keyboard,
         disable_web_page_preview=True,
     )
