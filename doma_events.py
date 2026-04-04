@@ -887,7 +887,7 @@ async def watch_events(app: Application, chat_id: int) -> None:
                     domain_cursor,
                     limit,
                 )
-                LOGGER.info("Fetching from GoDaddy... domains=%s", len(selected_domains))
+                LOGGER.info("Fetching from GoDaddy: domains=%s", len(selected_domains))
 
                 async def check_with_guard(domain: str) -> Optional[DomainOpportunity]:
                     async with scan_semaphore:
@@ -935,14 +935,15 @@ async def watch_events(app: Application, chat_id: int) -> None:
                     else:
                         non_vip_candidates.append(item)
 
-                vip_sent_count = 0
-                general_sent_count = 0
+                vip_match_count = 0
+                general_match_count = 0
 
                 for opportunity in vip_candidates:
                     try:
                         vip_record = active_vip_db.get(opportunity.sld)
                         if vip_record is None:
                             continue
+                        vip_match_count += 1
                         for target_chat_id in target_chat_ids:
                             if store.has_alerted(target_chat_id, opportunity.domain):
                                 continue
@@ -954,7 +955,6 @@ async def watch_events(app: Application, chat_id: int) -> None:
                                     disable_web_page_preview=True,
                                 )
                                 store.mark_alerted(target_chat_id, opportunity.domain, opportunity.source)
-                                vip_sent_count += 1
                                 LOGGER.info(
                                     "VIP Telegram send success chat_id=%s domain=%s",
                                     target_chat_id,
@@ -975,6 +975,7 @@ async def watch_events(app: Application, chat_id: int) -> None:
                     if not is_general_find_candidate(opportunity, cfg):
                         continue
                     try:
+                        general_match_count += 1
                         for target_chat_id in target_chat_ids:
                             if store.has_alerted(target_chat_id, opportunity.domain):
                                 continue
@@ -986,7 +987,6 @@ async def watch_events(app: Application, chat_id: int) -> None:
                                     disable_web_page_preview=True,
                                 )
                                 store.mark_alerted(target_chat_id, opportunity.domain, opportunity.source)
-                                general_sent_count += 1
                                 LOGGER.info(
                                     "General Telegram send success chat_id=%s domain=%s",
                                     target_chat_id,
@@ -1012,15 +1012,15 @@ async def watch_events(app: Application, chat_id: int) -> None:
                 app.bot_data["scan_cycle_counter"] = int(app.bot_data.get("scan_cycle_counter", 0)) + 1
                 app.bot_data["latest_scan_summary"] = {
                     "domains_checked": len(selected_domains),
-                    "vip_matches": vip_sent_count,
-                    "general_finds": general_sent_count,
+                    "vip_matches": vip_match_count,
+                    "general_finds": general_match_count,
                 }
 
                 quota_wait = client.quota_backoff_remaining_seconds()
                 breaker_wait = client.circuit_open_remaining_seconds()
                 next_wait = max(poll_seconds, quota_wait, breaker_wait)
                 LOGGER.info(
-                    "Cycle complete mode=%s checked=%s available=%s next_poll=%ss quota_wait=%ss breaker_wait=%ss",
+                    "Cycle complete mode=%s checked=%s opportunities=%s next_poll=%ss quota_wait=%ss breaker_wait=%ss",
                     "turbo" if in_turbo else "eco",
                     len(selected_domains),
                     len(opportunities),

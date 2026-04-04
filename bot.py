@@ -27,7 +27,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-LOGGER = logging.getLogger(__name__)
 
 
 def default_filters() -> dict[str, Any]:
@@ -251,7 +250,7 @@ async def force_scan_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     while loop.time() < deadline:
         current_cycle = int(context.application.bot_data.get("scan_cycle_counter", 0))
         latest_summary = context.application.bot_data.get("latest_scan_summary", {})
-        if current_cycle > start_cycle and isinstance(latest_summary, dict):
+        if current_cycle > start_cycle:
             checked = int(latest_summary.get("domains_checked", 0))
             vip = int(latest_summary.get("vip_matches", 0))
             general = int(latest_summary.get("general_finds", 0))
@@ -265,7 +264,7 @@ async def force_scan_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
         await asyncio.sleep(0.5)
 
-    LOGGER.warning("Force scan summary timeout for chat_id=%s", chat_id)
+    logging.warning("Force scan summary timeout (%ss) for chat_id=%s", timeout_seconds, chat_id)
     await context.bot.send_message(
         chat_id=chat_id,
         text="❌ <b>Scan Timeout</b>\nNo completed GoDaddy cycle was detected in time.",
