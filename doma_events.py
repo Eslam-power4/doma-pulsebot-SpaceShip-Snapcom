@@ -25,8 +25,8 @@ LOGGER = logging.getLogger(__name__)
 
 # ─── Tuning constants ────────────────────────────────────────────────────────
 MAIN_CHAT_ID = '-1003736596502'
-TELEGRAM_TOPICS_MAP = {'.my': 2, '.app': 3, '.tech': 4, '.com': 5, '.ai': 6, '.dev': 23}
-PRIORITY_TLDS = frozenset({".com", ".tech", ".my", ".app", ".dev", ".ai"})
+TELEGRAM_TOPICS_MAP = {'.com': 5, '.ai': 6, '.dev': 23}
+PRIORITY_TLDS = frozenset({".com", ".ai", ".dev"})
 
 MIN_POLL_SECONDS = 1
 MIN_RETRY_ATTEMPTS = 1
@@ -36,7 +36,8 @@ MIN_QUOTA_COOLDOWN_SECONDS = 30
 MIN_CIRCUIT_BREAKER_SECONDS = 30
 DEFAULT_FALLBACK_ASK_PRICE_USD = 10.0
 WATCHER_ERROR_RETRY_SECONDS = 5
-TARGET_TLDS = {".com", ".tech", ".my", ".app", ".dev", ".ai"}
+TARGET_TLDS = {".com", ".ai", ".dev"}
+available_domains_batch: list[str] = []
 
 # Spaceship-specific throttle / batch controls
 # ─ 2 s intra-batch delay as required; keep default 429-backoff seed here too
@@ -100,7 +101,7 @@ class WatcherConfig:
     circuit_breaker_open_seconds: int = 120
     min_margin_usd: float = 20.0
     min_margin_ratio: float = 1.8
-    allowed_tlds: set[str] = field(default_factory=lambda: {".com", ".tech", ".my", ".app", ".dev", ".ai"})
+    allowed_tlds: set[str] = field(default_factory=lambda: {".com", ".ai", ".dev"})
     high_value_keywords: set[str] = field(
         default_factory=lambda: {
             "ai",
@@ -142,11 +143,11 @@ class WatcherConfig:
     vip_reload_seconds: int = 3600
     scan_concurrency: int = 50
     general_find_max_length: int = 5
-    general_find_tlds: set[str] = field(default_factory=lambda: {".com", ".tech", ".my", ".app", ".dev", ".ai"})
+    general_find_tlds: set[str] = field(default_factory=lambda: {".com", ".ai", ".dev"})
 
     @classmethod
     def from_env(cls) -> "WatcherConfig":
-        raw_tlds = os.getenv("ALLOWED_TLDS", ".com,.tech,.my,.app,.dev,.ai")
+        raw_tlds = os.getenv("ALLOWED_TLDS", ".com,.ai,.dev")
         allowed_tlds = {
             t.strip().lower() if t.strip().startswith(".") else f".{t.strip().lower()}"
             for t in raw_tlds.split(",")
@@ -167,7 +168,7 @@ class WatcherConfig:
             "gibberish,unbrandable,unpronounceable,nonsense,meaningless,awkward,spammy",
         )
         negative_keywords = {kw.strip().lower() for kw in raw_negative_keywords.split(",") if kw.strip()}
-        raw_general_find_tlds = os.getenv("GENERAL_FIND_TLDS", ".com,.tech,.my,.app,.dev,.ai")
+        raw_general_find_tlds = os.getenv("GENERAL_FIND_TLDS", ".com,.ai,.dev")
         general_find_tlds = {
             t.strip().lower() if t.strip().startswith(".") else f".{t.strip().lower()}"
             for t in raw_general_find_tlds.split(",")
@@ -193,7 +194,7 @@ class WatcherConfig:
             ),
             min_margin_usd=float(os.getenv("ARBITRAGE_MIN_GAP_USD", "20")),
             min_margin_ratio=float(os.getenv("ARBITRAGE_MIN_RATIO", "1.8")),
-            allowed_tlds=allowed_tlds or {".com", ".tech", ".my", ".app", ".dev", ".ai"},
+            allowed_tlds=allowed_tlds or {".com", ".ai", ".dev"},
             high_value_keywords=high_value_keywords
             or {"ai", "crypto", "cloud", "data", "dev", "app", "bot", "pay", "trade", "labs"},
             negative_keywords=negative_keywords
@@ -209,7 +210,7 @@ class WatcherConfig:
             vip_reload_seconds=max(60, int(os.getenv("VIP_RELOAD_SECONDS", "3600"))),
             scan_concurrency=max(1, int(os.getenv("SCAN_CONCURRENCY", "50"))),
             general_find_max_length=max(1, int(os.getenv("GENERAL_FIND_MAX_LENGTH", "5"))),
-            general_find_tlds=general_find_tlds or {".com", ".tech", ".my", ".app", ".dev", ".ai"},
+            general_find_tlds=general_find_tlds or {".com", ".ai", ".dev"},
         )
 
 
@@ -712,6 +713,8 @@ class SpaceshipClient:
             if normalized_domain:
                 status_by_domain[normalized_domain] = status_text
             if not is_available:
+                if status_text in {"Unavailable", "Tldnotsupported"}:
+                    LOGGER.info("Checked %s - Status: %s", normalized_domain or "N/A", status_text)
                 continue
 
             if not normalized_domain or "." not in normalized_domain:
@@ -913,6 +916,38 @@ def _domain_status_from_item(item: dict[str, Any]) -> tuple[bool, str]:
     return False, "Unavailable"
 
 
+def format_available_domains_batch_summary(domains: list[str]) -> str:
+    safe_domains = [html.escape(d) for d in domains[:20]]
+    lines = "\n".join(f"{idx}. <code>{domain}</code>" for idx, domain in enumerate(safe_domains, start=1))
+    return (
+        "📦 <b>VIP Available Domains Batch (20)</b>\n"
+        "تم رصد 20 دومين متاح:\n"
+        f"{lines}"
+    )
+
+
+async def send_batch_summary_notification(
+    app: Application,
+    domains: list[str],
+) -> bool:
+    payload: dict[str, Any] = {
+        "chat_id": int(MAIN_CHAT_ID),
+        "text": format_available_domains_batch_summary(domains),
+        "parse_mode": ParseMode.HTML,
+        "disable_web_page_preview": True,
+    }
+    while True:
+        try:
+            await app.bot.send_message(**payload)
+            await asyncio.sleep(1)
+            return True
+        except RetryAfter as e:
+            await asyncio.sleep(float(getattr(e, "retry_after", 1) or 1))
+        except Exception:
+            LOGGER.exception("Batch summary Telegram send failed chat_id=%s", payload["chat_id"])
+            return False
+
+
 async def evaluate_opportunity(
     opportunity: DomainOpportunity,
     cfg: WatcherConfig,
@@ -997,7 +1032,7 @@ async def send_telegram_notification(
             try:
                 await app.bot.send_message(**topic_payload)
                 print(f"[SUCCESS] Sent to Topic {mapped_thread_id}")
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(1)
                 return
             except RetryAfter as e:
                 await asyncio.sleep(float(getattr(e, "retry_after", 1) or 1))
@@ -1008,7 +1043,7 @@ async def send_telegram_notification(
         try:
             await app.bot.send_message(**base_payload)
             print("[FALLBACK] Thread failed, sent to General Group.")
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(1)
             return
         except RetryAfter as e:
             await asyncio.sleep(float(getattr(e, "retry_after", 1) or 1))
@@ -1280,6 +1315,7 @@ async def fetch_spaceship_domains(app: Application, chat_id: int) -> dict[str, i
       Retry-After / exponential back-off (see SpaceshipClient._request_json_with_retry).
     """
     cfg = WatcherConfig.from_env()
+    global available_domains_batch
     validate_required_spaceship_config(cfg)
     timeout = aiohttp.ClientTimeout(total=cfg.request_timeout_seconds)
     app.bot_data.setdefault("scan_cycle_counter", 0)
@@ -1402,6 +1438,11 @@ async def fetch_spaceship_domains(app: Application, chat_id: int) -> dict[str, i
                                 disable_web_page_preview=True,
                             )
                             store.mark_alerted(target_chat_id, opportunity.domain, opportunity.source)
+                            available_domains_batch.append(opportunity.domain)
+                            if len(available_domains_batch) >= 20:
+                                summary_sent = await send_batch_summary_notification(app, available_domains_batch[:20])
+                                if summary_sent:
+                                    available_domains_batch.clear()
                             LOGGER.info(
                                 "VIP Telegram send success chat_id=%s domain=%s",
                                 target_chat_id,
