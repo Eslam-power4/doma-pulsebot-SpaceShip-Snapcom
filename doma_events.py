@@ -37,7 +37,9 @@ MIN_CIRCUIT_BREAKER_SECONDS = 30
 DEFAULT_FALLBACK_ASK_PRICE_USD = 10.0
 WATCHER_ERROR_RETRY_SECONDS = 5
 TARGET_TLDS = {".com", ".ai", ".dev"}
+AVAILABLE_BATCH_SIZE = 20
 available_domains_batch: list[str] = []
+available_domains_batch_lock = asyncio.Lock()
 
 # Spaceship-specific throttle / batch controls
 # ─ 2 s intra-batch delay as required; keep default 429-backoff seed here too
@@ -917,11 +919,11 @@ def _domain_status_from_item(item: dict[str, Any]) -> tuple[bool, str]:
 
 
 def format_available_domains_batch_summary(domains: list[str]) -> str:
-    safe_domains = [html.escape(d) for d in domains[:20]]
+    safe_domains = [html.escape(d) for d in domains[:AVAILABLE_BATCH_SIZE]]
     lines = "\n".join(f"{idx}. <code>{domain}</code>" for idx, domain in enumerate(safe_domains, start=1))
     return (
-        "📦 <b>VIP Available Domains Batch (20)</b>\n"
-        "تم رصد 20 دومين متاح:\n"
+        f"📦 <b>VIP Available Domains Batch ({AVAILABLE_BATCH_SIZE})</b>\n"
+        f"تم رصد {AVAILABLE_BATCH_SIZE} دومين متاح:\n"
         f"{lines}"
     )
 
@@ -1438,11 +1440,20 @@ async def fetch_spaceship_domains(app: Application, chat_id: int) -> dict[str, i
                                 disable_web_page_preview=True,
                             )
                             store.mark_alerted(target_chat_id, opportunity.domain, opportunity.source)
-                            available_domains_batch.append(opportunity.domain)
-                            if len(available_domains_batch) >= 20:
-                                summary_sent = await send_batch_summary_notification(app, available_domains_batch[:20])
-                                if summary_sent:
-                                    available_domains_batch.clear()
+                            while True:
+                                domains_to_send: list[str] = []
+                                async with available_domains_batch_lock:
+                                    available_domains_batch.append(opportunity.domain)
+                                    if len(available_domains_batch) >= AVAILABLE_BATCH_SIZE:
+                                        domains_to_send = available_domains_batch[:AVAILABLE_BATCH_SIZE]
+                                if not domains_to_send:
+                                    break
+                                summary_sent = await send_batch_summary_notification(app, domains_to_send)
+                                if not summary_sent:
+                                    break
+                                async with available_domains_batch_lock:
+                                    if available_domains_batch[:AVAILABLE_BATCH_SIZE] == domains_to_send:
+                                        del available_domains_batch[:AVAILABLE_BATCH_SIZE]
                             LOGGER.info(
                                 "VIP Telegram send success chat_id=%s domain=%s",
                                 target_chat_id,
