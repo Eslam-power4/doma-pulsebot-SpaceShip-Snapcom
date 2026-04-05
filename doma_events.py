@@ -39,7 +39,7 @@ WATCHER_ERROR_RETRY_SECONDS = 5
 TARGET_TLDS = {".com", ".ai", ".dev"}
 AVAILABLE_BATCH_SIZE = 20
 available_domains_batch: list[str] = []
-available_domains_batch_lock = asyncio.Lock()
+available_domains_batch_lock: asyncio.Lock | None = None
 
 # Spaceship-specific throttle / batch controls
 # ─ 2 s intra-batch delay as required; keep default 429-backoff seed here too
@@ -715,7 +715,7 @@ class SpaceshipClient:
             if normalized_domain:
                 status_by_domain[normalized_domain] = status_text
             if not is_available:
-                if status_text in {"Unavailable", "Tldnotsupported"}:
+                if status_text.strip().lower() in {"unavailable", "tldnotsupported"}:
                     LOGGER.info("Checked %s - Status: %s", normalized_domain or "N/A", status_text)
                 continue
 
@@ -921,9 +921,10 @@ def _domain_status_from_item(item: dict[str, Any]) -> tuple[bool, str]:
 def format_available_domains_batch_summary(domains: list[str]) -> str:
     safe_domains = [html.escape(d) for d in domains[:AVAILABLE_BATCH_SIZE]]
     lines = "\n".join(f"{idx}. <code>{domain}</code>" for idx, domain in enumerate(safe_domains, start=1))
+    count = len(safe_domains)
     return (
-        f"📦 <b>VIP Available Domains Batch ({AVAILABLE_BATCH_SIZE})</b>\n"
-        f"تم رصد {AVAILABLE_BATCH_SIZE} دومين متاح:\n"
+        f"📦 <b>VIP Available Domains Batch ({count})</b>\n"
+        f"تم رصد {count} دومين متاح:\n"
         f"{lines}"
     )
 
@@ -1317,7 +1318,9 @@ async def fetch_spaceship_domains(app: Application, chat_id: int) -> dict[str, i
       Retry-After / exponential back-off (see SpaceshipClient._request_json_with_retry).
     """
     cfg = WatcherConfig.from_env()
-    global available_domains_batch
+    global available_domains_batch, available_domains_batch_lock
+    if available_domains_batch_lock is None:
+        available_domains_batch_lock = asyncio.Lock()
     validate_required_spaceship_config(cfg)
     timeout = aiohttp.ClientTimeout(total=cfg.request_timeout_seconds)
     app.bot_data.setdefault("scan_cycle_counter", 0)
@@ -1440,19 +1443,17 @@ async def fetch_spaceship_domains(app: Application, chat_id: int) -> dict[str, i
                                 disable_web_page_preview=True,
                             )
                             store.mark_alerted(target_chat_id, opportunity.domain, opportunity.source)
-                            while True:
-                                domains_to_send: list[str] = []
-                                async with available_domains_batch_lock:
-                                    available_domains_batch.append(opportunity.domain)
-                                    if len(available_domains_batch) >= AVAILABLE_BATCH_SIZE:
-                                        domains_to_send = available_domains_batch[:AVAILABLE_BATCH_SIZE]
-                                if not domains_to_send:
-                                    break
+                            async with available_domains_batch_lock:
+                                available_domains_batch.append(opportunity.domain)
+                                domains_to_send = (
+                                    available_domains_batch[:AVAILABLE_BATCH_SIZE]
+                                    if len(available_domains_batch) >= AVAILABLE_BATCH_SIZE
+                                    else []
+                                )
+                            if domains_to_send:
                                 summary_sent = await send_batch_summary_notification(app, domains_to_send)
-                                if not summary_sent:
-                                    break
-                                async with available_domains_batch_lock:
-                                    if available_domains_batch[:AVAILABLE_BATCH_SIZE] == domains_to_send:
+                                if summary_sent:
+                                    async with available_domains_batch_lock:
                                         del available_domains_batch[:AVAILABLE_BATCH_SIZE]
                             LOGGER.info(
                                 "VIP Telegram send success chat_id=%s domain=%s",
