@@ -823,8 +823,7 @@ def _normalize_tld(value: str) -> str:
     return raw if raw.startswith(".") else f".{raw}"
 
 
-def _effective_allowed_tlds(cfg: WatcherConfig) -> set[str]:
-    _ = cfg
+def _effective_allowed_tlds() -> set[str]:
     return set(TARGET_TLDS)
 
 
@@ -1158,7 +1157,7 @@ def _chat_filter_matches(
 def build_candidate_domains(vip_db: dict[str, VipRecord], cfg: WatcherConfig) -> list[str]:
     """Build candidate domains from VIP roots and high-value keyword permutations across allowed TLDs."""
     domains: set[str] = set()
-    effective_tlds = _effective_allowed_tlds(cfg)
+    effective_tlds = _effective_allowed_tlds()
     for root in vip_db.keys():
         normalized_root = root.strip().lower()
         if not normalized_root:
