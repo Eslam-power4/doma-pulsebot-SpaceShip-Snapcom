@@ -52,6 +52,7 @@ PROCESSED_STATUS_ALLOWED = {
 # ─ 2 s intra-batch delay as required; keep default 429-backoff seed here too
 SPACESHIP_INTRA_BATCH_DELAY_SECONDS = 2
 SPACESHIP_BULK_BATCH_SIZE = 20          # Spaceship /domains/available max batch size
+DOMAIN_CHECK_RETRY_DELAY_SECONDS = 2
 
 
 class SpaceshipCircuitOpenError(Exception):
@@ -941,7 +942,10 @@ def _is_retryable_check_error(exc: Exception) -> bool:
         return True
     if isinstance(exc, RuntimeError):
         message = str(exc).lower()
-        return "status=5" in message or "timeout" in message
+        # _request_json_with_retry raises RuntimeError text that may contain
+        # "status=<code>" for upstream HTTP failures. Treat 5xx as retryable.
+        has_5xx_status = re.search(r"status=(5\d{2})\b", message) is not None
+        return has_5xx_status or "timeout" in message
     return False
 
 
@@ -984,8 +988,12 @@ async def check_domains_with_single_retry(
         if not _is_retryable_check_error(first_error):
             LOGGER.error("Non-retryable domain check failure for batch=%s: %s", len(normalized_domains), first_error)
             return [], {domain: PROCESSED_STATUS_ERROR_SKIPPED for domain in normalized_domains}
-        LOGGER.error("Domain check failed; retrying once in 2s: %s", first_error)
-        await asyncio.sleep(2)
+        LOGGER.error(
+            "Domain check failed; retrying once in %ss: %s",
+            DOMAIN_CHECK_RETRY_DELAY_SECONDS,
+            first_error,
+        )
+        await asyncio.sleep(DOMAIN_CHECK_RETRY_DELAY_SECONDS)
         try:
             return await _run_once()
         except Exception as second_error:
@@ -1402,7 +1410,10 @@ async def fetch_spaceship_domains(app: Application, chat_id: int) -> dict[str, i
                     clean_domain = str(checked_domain or "").strip().lower()
                     if not clean_domain:
                         continue
-                    base_keyword = clean_domain.rpartition(".")[0]
+                    if clean_domain.endswith(".me"):
+                        base_keyword = clean_domain.removesuffix(".me")
+                    else:
+                        base_keyword = clean_domain.split(".", 1)[0]
                     status = batch_statuses.get(clean_domain, PROCESSED_STATUS_ERROR_SKIPPED)
                     log_to_processed_csv(base_keyword, clean_domain, status)
                     if status == PROCESSED_STATUS_ERROR_SKIPPED:

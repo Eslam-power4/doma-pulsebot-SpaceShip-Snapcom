@@ -18,6 +18,8 @@ class VipRecord:
 
 VIP_DATA_CACHE: dict[str, VipRecord] = {}
 VIP_DATA_LOCK = threading.Lock()
+ENGLISH_LETTERS_RE = re.compile(r"[A-Za-z]")
+MULTI_HYPHEN_RE = re.compile(r"-{2,}")
 
 
 def extract_keyword_from_row(row: list) -> str:
@@ -35,7 +37,7 @@ def extract_keyword_from_row(row: list) -> str:
         value = str(cell or "").strip()
         if len(value) <= 1:
             continue
-        if not re.search(r"[A-Za-z]", value):
+        if not ENGLISH_LETTERS_RE.search(value):
             continue
         return value
     return ""
@@ -55,7 +57,7 @@ def sanitize_and_build_domain(raw_keyword: str) -> str:
         return ""
     base = normalized.removesuffix(".me")
     clean_base_word = re.sub(r"[^a-z0-9-]", "", base)
-    clean_base_word = re.sub(r"-{2,}", "-", clean_base_word).strip("-")
+    clean_base_word = MULTI_HYPHEN_RE.sub("-", clean_base_word).strip("-")
     if not clean_base_word:
         return ""
     return f"{clean_base_word}.me"
