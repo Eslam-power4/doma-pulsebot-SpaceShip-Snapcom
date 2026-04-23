@@ -58,7 +58,7 @@ def sanitize_and_build_domain(raw_keyword: str) -> str:
     normalized = re.sub(r"\s+", "", str(raw_keyword or "").lower())
     if not normalized:
         return ""
-    base = normalized[:-3] if normalized.endswith(".me") else normalized
+    base = normalized.removesuffix(".me")
     clean_base_word = re.sub(r"[^a-z0-9\-]", "", base)
     clean_base_word = MULTI_HYPHEN_RE.sub("-", clean_base_word).strip("-")
     if not clean_base_word:

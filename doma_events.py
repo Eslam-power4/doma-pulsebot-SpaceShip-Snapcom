@@ -27,6 +27,7 @@ logger = LOGGER
 
 # ─── Tuning constants ────────────────────────────────────────────────────────
 MAIN_CHAT_ID = '-1003736596502'
+# Strict .me mode: all available alerts are routed to the fixed topic below.
 TELEGRAM_TOPIC_ID = 20253
 PRIORITY_TLDS = frozenset({".me"})
 
@@ -1077,6 +1078,11 @@ def format_alert(opportunity: DomainOpportunity, valuation: ValuationResult) -> 
     )
 
 
+def format_available_alert(raw_domain: str) -> str:
+    normalized_domain = str(raw_domain or "").strip().lower()
+    return f"🟢 AVAILABLE: {normalized_domain}"
+
+
 async def send_telegram_notification(
     app: Application,
     domain_name: str,
@@ -1488,7 +1494,7 @@ async def fetch_spaceship_domains(app: Application, chat_id: int) -> dict[str, i
                             await send_telegram_notification(
                                 app=app,
                                 domain_name=opportunity.domain,
-                                text=f"🟢 AVAILABLE: {opportunity.domain}",
+                                text=format_available_alert(opportunity.domain),
                                 parse_mode=ParseMode.HTML,
                                 disable_web_page_preview=True,
                             )
@@ -1521,7 +1527,7 @@ async def fetch_spaceship_domains(app: Application, chat_id: int) -> dict[str, i
                             await send_telegram_notification(
                                 app=app,
                                 domain_name=opportunity.domain,
-                                text=f"🟢 AVAILABLE: {opportunity.domain}",
+                                text=format_available_alert(opportunity.domain),
                                 parse_mode="HTML",
                                 disable_web_page_preview=True,
                             )
