@@ -944,7 +944,7 @@ def _is_retryable_check_error(exc: Exception) -> bool:
         message = str(exc).lower()
         # _request_json_with_retry raises RuntimeError text that may contain
         # "status=<code>" for upstream HTTP failures. Treat 5xx as retryable.
-        has_5xx_status = re.search(r"status=(5\d{2})", message) is not None
+        has_5xx_status = bool(re.search(r"status=(5\d{2})", message))
         return has_5xx_status or "timeout" in message
     return False
 
@@ -1015,7 +1015,11 @@ async def check_domains_with_single_retry(
         try:
             return await _run_once()
         except Exception as second_error:
-            LOGGER.error("Domain check failed after one retry; skipping batch=%s: %s", len(normalized_domains), second_error)
+            LOGGER.error(
+                "Domain check failed after one retry; skipping batch_size=%s: %s",
+                len(normalized_domains),
+                second_error,
+            )
             return [], {domain: PROCESSED_STATUS_ERROR_SKIPPED for domain in normalized_domains}
 
 
