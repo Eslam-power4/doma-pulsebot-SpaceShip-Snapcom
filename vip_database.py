@@ -27,8 +27,6 @@ def _extract_keyword_with_index(row: list[Any]) -> tuple[str, int]:
         return "", -1
     for index, cell in enumerate(row):
         value = str(cell or "").strip()
-        if len(value) <= 1:
-            continue
         if not ENGLISH_LETTERS_RE.search(value):
             continue
         return value, index
@@ -57,7 +55,7 @@ def sanitize_and_build_domain(raw_keyword: str) -> str:
     - keep only [a-z0-9-]
     - normalize repeated hyphens and edge hyphens
     """
-    normalized = str(raw_keyword or "").strip().lower()
+    normalized = re.sub(r"\s+", "", str(raw_keyword or "").lower())
     if not normalized:
         return ""
     base = normalized.removesuffix(".me")

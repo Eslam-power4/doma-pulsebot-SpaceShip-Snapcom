@@ -27,8 +27,9 @@ logger = LOGGER
 
 # ─── Tuning constants ────────────────────────────────────────────────────────
 MAIN_CHAT_ID = '-1003736596502'
-TELEGRAM_TOPICS_MAP = {'.com': 5, '.ai': 6, '.dev': 23}
-PRIORITY_TLDS = frozenset({".com", ".ai", ".dev"})
+# Strict .me mode: all available alerts are routed to the fixed topic below.
+TELEGRAM_TOPIC_ID = 20253
+PRIORITY_TLDS = frozenset({".me"})
 
 MIN_POLL_SECONDS = 1
 MIN_RETRY_ATTEMPTS = 1
@@ -38,14 +39,14 @@ MIN_QUOTA_COOLDOWN_SECONDS = 30
 MIN_CIRCUIT_BREAKER_SECONDS = 30
 DEFAULT_FALLBACK_ASK_PRICE_USD = 10.0
 WATCHER_ERROR_RETRY_SECONDS = 5
-TARGET_TLDS = {".com", ".ai", ".dev"}
+TARGET_TLDS = {".me"}
 PROCESSED_STATUS_AVAILABLE = "Available"
 PROCESSED_STATUS_TAKEN = "Taken"
-PROCESSED_STATUS_ERROR_SKIPPED = "Error_Skipped"
+PROCESSED_STATUS_ERROR = "Error"
 PROCESSED_STATUS_ALLOWED = {
     PROCESSED_STATUS_AVAILABLE,
     PROCESSED_STATUS_TAKEN,
-    PROCESSED_STATUS_ERROR_SKIPPED,
+    PROCESSED_STATUS_ERROR,
 }
 
 # Spaceship-specific throttle / batch controls
@@ -918,9 +919,9 @@ def log_to_processed_csv(base_keyword: str, full_domain: str, status: str) -> No
 
     - Opens file in append mode.
     - Auto-creates with header when absent.
-    - Status is constrained to: Available, Taken, Error_Skipped.
+    - Status is constrained to: Available, Taken, Error.
     """
-    normalized_status = status if status in PROCESSED_STATUS_ALLOWED else PROCESSED_STATUS_ERROR_SKIPPED
+    normalized_status = status if status in PROCESSED_STATUS_ALLOWED else PROCESSED_STATUS_ERROR
     output_path = Path(__file__).with_name("processed_domains.csv")
     file_exists = output_path.exists()
 
@@ -966,7 +967,7 @@ async def check_domains_with_single_retry(
     Returns:
       (available_opportunities, status_by_domain)
     where status_by_domain values are strictly one of:
-      Available, Taken, Error_Skipped.
+      Available, Taken, Error.
     """
     normalized_domains = [
         d.strip().lower()
@@ -1005,7 +1006,7 @@ async def check_domains_with_single_retry(
                 normalized_domains[:3],
                 first_error,
             )
-            return [], {domain: PROCESSED_STATUS_ERROR_SKIPPED for domain in normalized_domains}
+            return [], {domain: PROCESSED_STATUS_ERROR for domain in normalized_domains}
         LOGGER.error(
             "Domain check failed; retrying once in %ss: %s",
             DOMAIN_CHECK_RETRY_DELAY_SECONDS,
@@ -1020,7 +1021,7 @@ async def check_domains_with_single_retry(
                 len(normalized_domains),
                 second_error,
             )
-            return [], {domain: PROCESSED_STATUS_ERROR_SKIPPED for domain in normalized_domains}
+            return [], {domain: PROCESSED_STATUS_ERROR for domain in normalized_domains}
 
 
 async def evaluate_opportunity(
@@ -1077,6 +1078,11 @@ def format_alert(opportunity: DomainOpportunity, valuation: ValuationResult) -> 
     )
 
 
+def format_available_alert(raw_domain: str) -> str:
+    normalized_domain = str(raw_domain or "").strip().lower()
+    return f"🟢 AVAILABLE: {normalized_domain}"
+
+
 async def send_telegram_notification(
     app: Application,
     domain_name: str,
@@ -1086,19 +1092,12 @@ async def send_telegram_notification(
     reply_markup: InlineKeyboardMarkup | None = None,
     disable_web_page_preview: bool = True,
 ) -> None:
-    clean_domain = (domain_name or "").strip().lower().rstrip(".")
-    _, _, ext = clean_domain.rpartition(".")
-    tld = f".{ext}" if ext else ""
-    topic_id = TELEGRAM_TOPICS_MAP.get(tld)
-    if topic_id is None:
-        raise ValueError(f"No Telegram topic mapping for tld={tld or 'N/A'} domain={domain_name}")
-
     payload: dict[str, Any] = {
         "chat_id": int(MAIN_CHAT_ID),
         "text": text,
         "parse_mode": parse_mode,
         "disable_web_page_preview": disable_web_page_preview,
-        "message_thread_id": topic_id,
+        "message_thread_id": TELEGRAM_TOPIC_ID,
     }
     if reply_markup is not None:
         payload["reply_markup"] = reply_markup
@@ -1106,7 +1105,11 @@ async def send_telegram_notification(
     while True:
         try:
             await app.bot.send_message(**payload)
-            logger.info(f"✅ VERIFIED: Telegram VIP message successfully sent for {domain_name} to Topic ID {topic_id}")
+            logger.info(
+                "✅ VERIFIED: Telegram message sent for %s to topic=%s",
+                domain_name,
+                TELEGRAM_TOPIC_ID,
+            )
             await asyncio.sleep(1)
             return
         except RetryAfter as e:
@@ -1433,9 +1436,9 @@ async def fetch_spaceship_domains(app: Application, chat_id: int) -> dict[str, i
                     if not clean_domain:
                         continue
                     base_keyword = _base_keyword_from_domain(clean_domain)
-                    status = batch_statuses.get(clean_domain, PROCESSED_STATUS_ERROR_SKIPPED)
+                    status = batch_statuses.get(clean_domain, PROCESSED_STATUS_ERROR)
                     log_to_processed_csv(base_keyword, clean_domain, status)
-                    if status == PROCESSED_STATUS_ERROR_SKIPPED:
+                    if status == PROCESSED_STATUS_ERROR:
                         api_blocked_failed += 1
                 # Intra-batch delay: simulate natural traffic; required anti-ban measure
                 if idx + SPACESHIP_BULK_BATCH_SIZE < len(selected_domains):
@@ -1491,7 +1494,7 @@ async def fetch_spaceship_domains(app: Application, chat_id: int) -> dict[str, i
                             await send_telegram_notification(
                                 app=app,
                                 domain_name=opportunity.domain,
-                                text=format_vip_alert(opportunity, vip_record),
+                                text=format_available_alert(opportunity.domain),
                                 parse_mode=ParseMode.HTML,
                                 disable_web_page_preview=True,
                             )
@@ -1524,7 +1527,7 @@ async def fetch_spaceship_domains(app: Application, chat_id: int) -> dict[str, i
                             await send_telegram_notification(
                                 app=app,
                                 domain_name=opportunity.domain,
-                                text=format_general_find_alert(opportunity),
+                                text=format_available_alert(opportunity.domain),
                                 parse_mode="HTML",
                                 disable_web_page_preview=True,
                             )
