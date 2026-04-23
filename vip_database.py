@@ -34,7 +34,7 @@ def _extract_keyword_with_index(row: list[Any]) -> tuple[str, int]:
         return "", -1
     for index, cell in enumerate(row):
         value = str(cell or "").strip()
-        if len(value) <= 1 or not ENGLISH_LETTERS_RE.search(value):
+        if not ENGLISH_LETTERS_RE.search(value):
             continue
         value = _strip_trailing_me_suffixes(value.lower().strip())
         if len(value) <= 1:

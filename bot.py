@@ -1,12 +1,12 @@
-import asyncio
 import logging
+import asyncio
 import os
 
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-from doma_events import MAIN_CHAT_ID, fetch_spaceship_domains, watch_events
+from doma_events import MAIN_CHAT_ID, TELEGRAM_TOPIC_ID, fetch_spaceship_domains, watch_events
 
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -21,7 +21,7 @@ LOGGER = logging.getLogger(__name__)
 async def start(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "👋 Doma PulseBot is live.\n"
-        f"🎯 Alert routing is locked to chat/topic: {MAIN_CHAT_ID} / 20253\n"
+        f"🎯 Alert routing is locked to chat/topic: {MAIN_CHAT_ID} / {TELEGRAM_TOPIC_ID}\n"
         "Commands: /stats /pause /resume /force_scan /help"
     )
 

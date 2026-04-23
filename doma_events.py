@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import aiohttp
+from telegram import InlineKeyboardMarkup
 from telegram.error import RetryAfter
 from telegram.ext import Application
 
@@ -45,6 +46,7 @@ PROCESSED_STATUS_ALLOWED = {
 SPACESHIP_INTRA_BATCH_DELAY_SECONDS = 2
 SPACESHIP_BULK_BATCH_SIZE = 20          # Spaceship /domains/available max batch size
 SPACESHIP_API_SINGLE_RETRY_DELAY_SECONDS = 2
+SPACESHIP_API_MAX_ATTEMPTS = 2
 PROCESSED_CSV_LOCK = threading.Lock()
 
 
@@ -387,7 +389,8 @@ class SpaceshipClient:
             )
 
         last_error: Optional[str] = None
-        for attempt in (1, 2):
+        for attempt in range(1, SPACESHIP_API_MAX_ATTEMPTS + 1):
+            is_last_attempt = attempt == SPACESHIP_API_MAX_ATTEMPTS
             await self._humanized_delay()
             try:
                 LOGGER.debug(">> Contacting Spaceship API: %s %s", method, url)
@@ -404,30 +407,32 @@ class SpaceshipClient:
                     if response.status == 429:
                         self._note_rate_limit()
                         self._note_retryable_failure()
-                        if attempt == 2:
+                        if is_last_attempt:
                             raise RuntimeError(f"{context_label} failed status=429 body={body[:300]}")
                         LOGGER.warning(
-                            "%s rate-limited (429) on %s; pausing %.2fs before retry (attempt %s/2)",
+                            "%s rate-limited (429) on %s; pausing %.2fs before retry (attempt %s/%s)",
                             context_label,
                             url,
                             SPACESHIP_API_SINGLE_RETRY_DELAY_SECONDS,
                             attempt,
+                            SPACESHIP_API_MAX_ATTEMPTS,
                         )
                         await asyncio.sleep(SPACESHIP_API_SINGLE_RETRY_DELAY_SECONDS)
                         continue
 
                     if 500 <= response.status < 600:
                         self._note_retryable_failure()
-                        if attempt == 2:
+                        if is_last_attempt:
                             raise RuntimeError(
                                 f"{context_label} failed status={response.status} body={body[:300]}"
                             )
                         LOGGER.warning(
-                            "%s upstream status=%s; retrying in %.2fs (attempt %s/2)",
+                            "%s upstream status=%s; retrying in %.2fs (attempt %s/%s)",
                             context_label,
                             response.status,
                             SPACESHIP_API_SINGLE_RETRY_DELAY_SECONDS,
                             attempt,
+                            SPACESHIP_API_MAX_ATTEMPTS,
                         )
                         await asyncio.sleep(SPACESHIP_API_SINGLE_RETRY_DELAY_SECONDS)
                         continue
@@ -452,14 +457,15 @@ class SpaceshipClient:
             except aiohttp.ClientError as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 self._note_retryable_failure()
-                if attempt == 2:
+                if is_last_attempt:
                     break
                 LOGGER.info(
-                    "%s network error: %s; retrying in %.2fs (attempt %s/2)",
+                    "%s network error: %s; retrying in %.2fs (attempt %s/%s)",
                     context_label,
                     exc,
                     SPACESHIP_API_SINGLE_RETRY_DELAY_SECONDS,
                     attempt,
+                    SPACESHIP_API_MAX_ATTEMPTS,
                 )
                 await asyncio.sleep(SPACESHIP_API_SINGLE_RETRY_DELAY_SECONDS)
 
@@ -747,10 +753,13 @@ def log_to_processed_csv(base_keyword: str, full_domain: str, status: str) -> No
     output_path = Path(__file__).with_name("processed_domains.csv")
 
     with PROCESSED_CSV_LOCK:
-        file_exists = output_path.exists()
+        try:
+            file_is_empty = not output_path.exists() or output_path.stat().st_size == 0
+        except FileNotFoundError:
+            file_is_empty = True
         with output_path.open("a", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle)
-            if not file_exists:
+            if file_is_empty:
                 writer.writerow(["Keyword", "Full_Domain", "Status"])
             writer.writerow(
                 [
@@ -829,11 +838,11 @@ async def send_telegram_notification(
     text: str,
     *,
     parse_mode: str = "HTML",
-    reply_markup: Any | None = None,
+    reply_markup: InlineKeyboardMarkup | None = None,
     disable_web_page_preview: bool = True,
 ) -> None:
     payload: dict[str, Any] = {
-        "chat_id": MAIN_CHAT_ID,
+        "chat_id": int(MAIN_CHAT_ID),
         "text": text,
         "parse_mode": parse_mode,
         "disable_web_page_preview": disable_web_page_preview,
