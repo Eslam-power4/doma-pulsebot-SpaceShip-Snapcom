@@ -4,7 +4,7 @@ import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 LOGGER = logging.getLogger(__name__)
 @dataclass(frozen=True)
@@ -22,7 +22,20 @@ ENGLISH_LETTERS_RE = re.compile(r"[A-Za-z]")
 MULTI_HYPHEN_RE = re.compile(r"-{2,}")
 
 
-def extract_keyword_from_row(row: list) -> str:
+def _extract_keyword_with_index(row: list[Any]) -> tuple[str, int]:
+    if not isinstance(row, list):
+        return "", -1
+    for index, cell in enumerate(row):
+        value = str(cell or "").strip()
+        if len(value) <= 1:
+            continue
+        if not ENGLISH_LETTERS_RE.search(value):
+            continue
+        return value, index
+    return "", -1
+
+
+def extract_keyword_from_row(row: list[Any]) -> str:
     """
     Header-agnostic keyword extraction from a raw CSV row.
 
@@ -31,16 +44,8 @@ def extract_keyword_from_row(row: list) -> str:
     - Return the FIRST non-empty cell that has length > 1 and contains English letters.
     - Ignore empty/symbol-only cells.
     """
-    if not isinstance(row, list):
-        return ""
-    for cell in row:
-        value = str(cell or "").strip()
-        if len(value) <= 1:
-            continue
-        if not ENGLISH_LETTERS_RE.search(value):
-            continue
-        return value
-    return ""
+    keyword, _ = _extract_keyword_with_index(row)
+    return keyword
 
 
 def sanitize_and_build_domain(raw_keyword: str) -> str:
@@ -82,7 +87,7 @@ def load_vip_database(folder: Path) -> dict[str, VipRecord]:
                 for row in reader:
                     if not isinstance(row, list) or not row:
                         continue
-                    raw_keyword = extract_keyword_from_row(row)
+                    raw_keyword, _keyword_index = _extract_keyword_with_index(row)
                     full_domain = sanitize_and_build_domain(raw_keyword)
                     if not full_domain:
                         continue
@@ -100,10 +105,10 @@ def load_vip_database(folder: Path) -> dict[str, VipRecord]:
 
                     records[abbreviation] = VipRecord(
                         abbreviation=abbreviation,
-                        sector=str(row[1] if len(row) > 1 else "").strip(),
-                        rating=str(row[2] if len(row) > 2 else "").strip(),
-                        meaning_en=str(row[3] if len(row) > 3 else "").strip(),
-                        meaning_ar=str(row[4] if len(row) > 4 else "").strip(),
+                        sector="",
+                        rating="",
+                        meaning_en="",
+                        meaning_ar="",
                     )
         except OSError as exc:
             LOGGER.warning("Failed reading VIP CSV %s: %s", csv_path.name, exc)

@@ -944,9 +944,16 @@ def _is_retryable_check_error(exc: Exception) -> bool:
         message = str(exc).lower()
         # _request_json_with_retry raises RuntimeError text that may contain
         # "status=<code>" for upstream HTTP failures. Treat 5xx as retryable.
-        has_5xx_status = re.search(r"status=(5\d{2})\b", message) is not None
+        has_5xx_status = re.search(r"status=(5\d{2})", message) is not None
         return has_5xx_status or "timeout" in message
     return False
+
+
+def _base_keyword_from_domain(full_domain: str) -> str:
+    clean_domain = str(full_domain or "").strip().lower()
+    if clean_domain.endswith(".me"):
+        return clean_domain.removesuffix(".me")
+    return clean_domain.split(".", 1)[0] if "." in clean_domain else clean_domain
 
 
 async def check_domains_with_single_retry(
@@ -970,7 +977,13 @@ async def check_domains_with_single_retry(
         return [], {}
 
     async def _run_once() -> tuple[list["DomainOpportunity"], dict[str, str]]:
-        opportunities, _failed_count = await client.check_domains_availability_bulk(normalized_domains)
+        opportunities, failed_count = await client.check_domains_availability_bulk(normalized_domains)
+        if failed_count:
+            LOGGER.info(
+                "Bulk availability returned %s unresolved results in batch_size=%s",
+                failed_count,
+                len(normalized_domains),
+            )
         available_domains = {op.domain.strip().lower() for op in opportunities}
         status_map = {
             domain: (
@@ -986,7 +999,12 @@ async def check_domains_with_single_retry(
         return await _run_once()
     except Exception as first_error:
         if not _is_retryable_check_error(first_error):
-            LOGGER.error("Non-retryable domain check failure for batch=%s: %s", len(normalized_domains), first_error)
+            LOGGER.error(
+                "Non-retryable domain check failure for batch_size=%s domains=%s: %s",
+                len(normalized_domains),
+                normalized_domains[:3],
+                first_error,
+            )
             return [], {domain: PROCESSED_STATUS_ERROR_SKIPPED for domain in normalized_domains}
         LOGGER.error(
             "Domain check failed; retrying once in %ss: %s",
@@ -1410,10 +1428,7 @@ async def fetch_spaceship_domains(app: Application, chat_id: int) -> dict[str, i
                     clean_domain = str(checked_domain or "").strip().lower()
                     if not clean_domain:
                         continue
-                    if clean_domain.endswith(".me"):
-                        base_keyword = clean_domain.removesuffix(".me")
-                    else:
-                        base_keyword = clean_domain.split(".", 1)[0]
+                    base_keyword = _base_keyword_from_domain(clean_domain)
                     status = batch_statuses.get(clean_domain, PROCESSED_STATUS_ERROR_SKIPPED)
                     log_to_processed_csv(base_keyword, clean_domain, status)
                     if status == PROCESSED_STATUS_ERROR_SKIPPED:
