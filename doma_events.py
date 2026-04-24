@@ -41,6 +41,7 @@ PROCESSED_STATUS_ALLOWED = {
     PROCESSED_STATUS_TAKEN,
     PROCESSED_STATUS_ERROR,
 }
+MAX_SUITABLE_PRICE_USD = 50.00
 
 # Spaceship-specific throttle / batch controls
 # ─ 2 s intra-batch delay as required; keep default 429-backoff seed here too
@@ -395,7 +396,7 @@ def _resolve_verified_price(item: dict[str, Any], domain: str) -> Optional[float
     verified_candidates: list[int] = []
     for amount_cents, primary_paths in primary.items():
         secondary_paths = secondary.get(amount_cents, set())
-        if len(primary_paths) < 1 or len(secondary_paths) < 1:
+        if not primary_paths or not secondary_paths:
             continue
         if len(primary_paths.union(secondary_paths)) >= 2:
             verified_candidates.append(amount_cents)
@@ -743,7 +744,7 @@ def _parse_domain_item(item: dict, fallback_domain: str) -> Optional["DomainOppo
     verified_price = _resolve_verified_price(item, normalized_domain)
     if verified_price is None:
         return None
-    if verified_price > 50.00:
+    if verified_price > MAX_SUITABLE_PRICE_USD:
         return None
     domain_price = f"{verified_price:.2f}"
     ask_price = verified_price
@@ -1159,7 +1160,7 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                     sanitized_domain = _sanitize_strict_me_domain(opportunity.domain)
                     if not sanitized_domain:
                         continue
-                    if opportunity.ask_price_usd > 50.00:
+                    if opportunity.ask_price_usd > MAX_SUITABLE_PRICE_USD:
                         continue
                     domain_price = opportunity.domain_price
                     buy_link = f"https://www.spaceship.com/domain-search/?query={sanitized_domain}"
