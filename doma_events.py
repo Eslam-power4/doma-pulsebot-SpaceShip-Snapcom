@@ -284,6 +284,10 @@ def _normalize_price(raw_price: Any) -> Optional[float]:
     return round(parsed, 2) if parsed >= 0 else None
 
 
+def _price_to_cents(price: float) -> int:
+    return int(round(price * 100))
+
+
 # REPLACE HERE: Strict .me domain validator module
 def _sanitize_strict_me_domain(raw_domain: Any) -> str:
     clean_domain = str(raw_domain or "").strip().lower()
@@ -305,14 +309,14 @@ def _sanitize_strict_me_domain(raw_domain: Any) -> str:
     return f"{keyword}.me"
 
 
-def _extract_numeric_values_from_price_node(node: Any, path: str) -> dict[float, set[str]]:
-    prices: dict[float, set[str]] = {}
+def _extract_numeric_values_from_price_node(node: Any, path: str) -> dict[int, set[str]]:
+    prices: dict[int, set[str]] = {}
     if isinstance(node, dict):
         for key in ("registerPrice", "price", "amount", "value", "listPrice", "yourPrice"):
             if key in node:
                 parsed = _normalize_price(node.get(key))
                 if parsed is not None:
-                    prices.setdefault(parsed, set()).add(f"{path}.{key}")
+                    prices.setdefault(_price_to_cents(parsed), set()).add(f"{path}.{key}")
         if "pricing" in node:
             nested = _extract_numeric_values_from_price_node(node["pricing"], f"{path}.pricing")
             for amount, paths in nested.items():
@@ -325,13 +329,13 @@ def _extract_numeric_values_from_price_node(node: Any, path: str) -> dict[float,
     else:
         parsed = _normalize_price(node)
         if parsed is not None:
-            prices.setdefault(parsed, set()).add(path)
+            prices.setdefault(_price_to_cents(parsed), set()).add(path)
     return prices
 
 
 # REPLACE HERE: Multi-layer primary price extractor
-def _primary_price_extractor(item: dict[str, Any]) -> dict[float, set[str]]:
-    primary_candidates: dict[float, set[str]] = {}
+def _primary_price_extractor(item: dict[str, Any]) -> dict[int, set[str]]:
+    primary_candidates: dict[int, set[str]] = {}
     for key in ("registerPrice", "price", "amount", "pricing"):
         if key not in item:
             continue
@@ -341,8 +345,8 @@ def _primary_price_extractor(item: dict[str, Any]) -> dict[float, set[str]]:
     return primary_candidates
 
 
-def _deep_collect_price_paths(node: Any, path: str = "root") -> dict[float, set[str]]:
-    candidates: dict[float, set[str]] = {}
+def _deep_collect_price_paths(node: Any, path: str = "root") -> dict[int, set[str]]:
+    candidates: dict[int, set[str]] = {}
     if isinstance(node, dict):
         for key, value in node.items():
             child_path = f"{path}.{key}"
@@ -362,24 +366,24 @@ def _deep_collect_price_paths(node: Any, path: str = "root") -> dict[float, set[
 
 
 # REPLACE HERE: Multi-layer secondary price verifier
-def _secondary_price_verifier(item: dict[str, Any]) -> dict[float, set[str]]:
+def _secondary_price_verifier(item: dict[str, Any]) -> dict[int, set[str]]:
     return _deep_collect_price_paths(item, "root")
 
 
 def _resolve_verified_price(item: dict[str, Any], domain: str) -> Optional[float]:
     primary = _primary_price_extractor(item)
     secondary = _secondary_price_verifier(item)
-    verified_candidates: list[float] = []
-    for amount, primary_paths in primary.items():
-        secondary_paths = secondary.get(amount, set())
-        if not secondary_paths:
+    verified_candidates: list[int] = []
+    for amount_cents, primary_paths in primary.items():
+        secondary_paths = secondary.get(amount_cents, set())
+        if len(primary_paths) < 1 or len(secondary_paths) < 1:
             continue
         if len(primary_paths.union(secondary_paths)) >= 2:
-            verified_candidates.append(amount)
+            verified_candidates.append(amount_cents)
     if len(verified_candidates) != 1:
         LOGGER.warning("Dropping %s due to unverified or ambiguous price paths", domain)
         return None
-    return round(verified_candidates[0], 2)
+    return round(verified_candidates[0] / 100.0, 2)
 
 
 class SpaceshipClient:
