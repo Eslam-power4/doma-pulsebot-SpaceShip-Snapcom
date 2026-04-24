@@ -73,7 +73,7 @@ SPACESHIP_API_MAX_ATTEMPTS = 4
 SPACESHIP_STUBBORN_RETRY_ATTEMPTS = 6
 SPACESHIP_STUBBORN_MAX_BACKOFF_SECONDS = 32
 DEFAULT_STATUS_EMOJI = "🟡"
-PRICE_VERIFICATION_FAILED_TEXT = "Verification Failed - Check Manually!"
+PRICE_VERIFICATION_FAILED_TEXT = "Verification Failed (Check Manually!)"
 PROCESSED_CSV_LOCK = threading.Lock()
 
 
@@ -388,6 +388,7 @@ def _extract_price_from_paths(item: dict[str, Any], paths: tuple[tuple[str, ...]
     return None
 
 
+# REPLACE HERE: Deterministic multi-layer Spaceship price extractor
 def extract_spaceship_price(payload: Any, domain_name: str) -> Optional[float]:
     """
     Deterministic extractor:
@@ -959,9 +960,22 @@ def format_available_alert(
     clean_price = f"{final_verified_price:.2f}"
     clean_link = html.escape(str(buy_link or "").strip(), quote=True)
     return (
-        f"🟢 **Domain:** {clean_domain}\n"
-        f"💰 **Price:** ${clean_price}\n"
-        f"🛒 **Buy:** <a href=\"{clean_link}\">Open in Spaceship</a>"
+        f"🟢 <b>Domain:</b> {clean_domain} | "
+        f"💰 <b>Price:</b> ${clean_price} | "
+        f"🛒 <b>Buy:</b> <a href=\"{clean_link}\">Spaceship Search URL</a>"
+    )
+
+
+def format_verification_failed_alert(
+    sanitized_domain: str,
+    buy_link: str,
+) -> str:
+    clean_domain = html.escape(str(sanitized_domain or "").strip().lower())
+    clean_link = html.escape(str(buy_link or "").strip(), quote=True)
+    return (
+        f"🟡 <b>Domain:</b> {clean_domain} | "
+        f"💰 <b>Price:</b> ⚠️ {PRICE_VERIFICATION_FAILED_TEXT} | "
+        f"🛒 <b>Buy:</b> <a href=\"{clean_link}\">Spaceship Search URL</a>"
     )
 
 
@@ -1162,6 +1176,7 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
             vip_match_count = 0
             general_match_count = 0
             fixed_chat_id = MAIN_CHAT_ID
+            # REPLACE HERE: Zero-attrition Force-Catch routing matrix (Case A/B/C)
             for opportunity in opportunities:
                 try:
                     if opportunity.availability_status.strip().lower() != "available":
@@ -1173,10 +1188,23 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                         continue
                     final_verified_price = opportunity.ask_price_usd
                     if final_verified_price is None:
-                        LOGGER.info(
-                            "Dropping domain=%s reason=parse_error price=None",
-                            opportunity.domain,
+                        buy_link = f"https://www.spaceship.com/domain-search/?query={sanitized_domain}"
+                        await send_telegram_notification(
+                            app=app,
+                            domain_name=opportunity.domain,
+                            text=format_verification_failed_alert(
+                                sanitized_domain=sanitized_domain,
+                                buy_link=buy_link,
+                            ),
+                            parse_mode="HTML",
+                            disable_web_page_preview=True,
                         )
+                        store.mark_alerted(fixed_chat_id, opportunity.domain, opportunity.source)
+                        if opportunity.sld in active_vip_db:
+                            vip_match_count += 1
+                        else:
+                            general_match_count += 1
+                        LOGGER.info("Telegram send success domain=%s case=verification_failed", opportunity.domain)
                         continue
                     if final_verified_price > MAX_SUITABLE_PRICE_USD:
                         LOGGER.info(
