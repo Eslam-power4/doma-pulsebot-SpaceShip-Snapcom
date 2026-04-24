@@ -656,10 +656,7 @@ def _parse_domain_item(item: dict, fallback_domain: str) -> Optional["DomainOppo
 
         parsed_domain_price = _normalize_price(raw_domain_price)
         if parsed_domain_price is not None:
-            if price_currency and price_currency not in {"USD", "$"}:
-                domain_price = f"{parsed_domain_price:.2f} {price_currency}"
-            else:
-                domain_price = f"{parsed_domain_price:.2f}"
+            domain_price = f"{parsed_domain_price:.2f}"
     except (KeyError, TypeError, ValueError, AttributeError):
         domain_price = "Premium / Unknown Price"
 
