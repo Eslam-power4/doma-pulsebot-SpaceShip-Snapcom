@@ -285,11 +285,21 @@ def _normalize_price(raw_price: Any) -> Optional[float]:
 
 
 def _price_to_cents(price: float) -> int:
+    """Convert a normalized USD float to integer cents for deterministic comparisons."""
     return int(round(price * 100))
 
 
 # REPLACE HERE: Strict .me domain validator module
 def _sanitize_strict_me_domain(raw_domain: Any) -> str:
+    """
+    Strictly validate and normalize a domain with exactly one .me extension.
+
+    Rules:
+    - no whitespace
+    - exactly one trailing .me extension
+    - keyword contains only [a-z0-9-]
+    - keyword cannot start/end with '-'
+    """
     clean_domain = str(raw_domain or "").strip().lower()
     if not clean_domain:
         return ""
@@ -310,6 +320,7 @@ def _sanitize_strict_me_domain(raw_domain: Any) -> str:
 
 
 def _extract_numeric_values_from_price_node(node: Any, path: str) -> dict[int, set[str]]:
+    """Recursively collect normalized price candidates and their JSON paths."""
     prices: dict[int, set[str]] = {}
     if isinstance(node, dict):
         for key in ("registerPrice", "price", "amount", "value", "listPrice", "yourPrice"):
@@ -335,6 +346,7 @@ def _extract_numeric_values_from_price_node(node: Any, path: str) -> dict[int, s
 
 # REPLACE HERE: Multi-layer primary price extractor
 def _primary_price_extractor(item: dict[str, Any]) -> dict[int, set[str]]:
+    """Extract candidate prices from primary expected root-level price keys."""
     primary_candidates: dict[int, set[str]] = {}
     for key in ("registerPrice", "price", "amount", "pricing"):
         if key not in item:
@@ -346,6 +358,7 @@ def _primary_price_extractor(item: dict[str, Any]) -> dict[int, set[str]]:
 
 
 def _deep_collect_price_paths(node: Any, path: str = "root") -> dict[int, set[str]]:
+    """Deep-scan any JSON object for price-bearing keys and track discovery paths."""
     candidates: dict[int, set[str]] = {}
     if isinstance(node, dict):
         for key, value in node.items():
@@ -367,10 +380,16 @@ def _deep_collect_price_paths(node: Any, path: str = "root") -> dict[int, set[st
 
 # REPLACE HERE: Multi-layer secondary price verifier
 def _secondary_price_verifier(item: dict[str, Any]) -> dict[int, set[str]]:
+    """Secondary verifier that performs full-structure recursive price discovery."""
     return _deep_collect_price_paths(item, "root")
 
 
 def _resolve_verified_price(item: dict[str, Any], domain: str) -> Optional[float]:
+    """
+    Resolve a single verified price when both extractors agree across multiple paths.
+
+    Returns None when there is no verified candidate or ambiguous multi-price output.
+    """
     primary = _primary_price_extractor(item)
     secondary = _secondary_price_verifier(item)
     verified_candidates: list[int] = []
