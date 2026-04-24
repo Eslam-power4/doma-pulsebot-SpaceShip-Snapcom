@@ -42,6 +42,27 @@ PROCESSED_STATUS_ALLOWED = {
     PROCESSED_STATUS_ERROR,
 }
 MAX_SUITABLE_PRICE_USD = 50.00
+PREMIUM_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
+    ("pricing", "premium", "register"),
+    ("pricing", "premium", "registerPrice"),
+    ("pricing", "premium", "price"),
+    ("pricing", "premium", "amount"),
+    ("premiumPrice",),
+    ("premium", "register"),
+    ("premium", "registerPrice"),
+    ("premium", "price"),
+    ("premium", "amount"),
+)
+STANDARD_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
+    ("pricing", "standard", "register"),
+    ("pricing", "standard", "registerPrice"),
+    ("pricing", "standard", "price"),
+    ("pricing", "standard", "amount"),
+    ("pricing", "register"),
+    ("pricing", "registerPrice"),
+    ("price",),
+    ("registerPrice",),
+)
 
 # Spaceship-specific throttle / batch controls
 # ─ 2 s intra-batch delay as required; keep default 429-backoff seed here too
@@ -277,22 +298,11 @@ def parse_float(value: Any) -> Optional[float]:
         return None
 
 
-def _normalize_price(raw_price: Any) -> Optional[float]:
-    """
-    Parse and normalise an arbitrary price value to a non-negative USD float.
-
-    Returns None only when the value is unparseable or negative.
-    Zero is a valid price (free domain promotions) and is preserved as 0.0.
-    """
-    parsed = parse_float(raw_price)
-    if parsed is None:
+def _coerce_non_negative_price(value: Any) -> Optional[float]:
+    parsed = parse_float(value)
+    if parsed is None or parsed < 0:
         return None
-    return round(parsed, 2) if parsed >= 0 else None
-
-
-def _price_to_cents(price: float) -> int:
-    """Convert a normalized USD float to integer cents for deterministic comparisons."""
-    return int(round(price * 100))
+    return round(parsed, 2)
 
 
 # REPLACE HERE: Strict .me domain validator module
@@ -325,124 +335,74 @@ def _sanitize_strict_me_domain(raw_domain: Any) -> str:
     return f"{keyword}.me"
 
 
-def _extract_numeric_values_from_price_node(node: Any, path: str) -> dict[int, set[str]]:
-    """Recursively collect normalized numeric candidates and their JSON paths."""
-    prices: dict[int, set[str]] = {}
-    if isinstance(node, dict):
-        for key in ("registerPrice", "price", "amount", "value", "listPrice", "yourPrice"):
-            if key in node:
-                parsed = _normalize_price(node.get(key))
-                if parsed is not None:
-                    prices.setdefault(_price_to_cents(parsed), set()).add(f"{path}.{key}")
-        if "pricing" in node:
-            nested = _extract_numeric_values_from_price_node(node["pricing"], f"{path}.pricing")
-            for amount, paths in nested.items():
-                prices.setdefault(amount, set()).update(paths)
-    elif isinstance(node, list):
-        for idx, child in enumerate(node):
-            nested = _extract_numeric_values_from_price_node(child, f"{path}[{idx}]")
-            for amount, paths in nested.items():
-                prices.setdefault(amount, set()).update(paths)
-    else:
-        parsed = _normalize_price(node)
-        if parsed is not None:
-            prices.setdefault(_price_to_cents(parsed), set()).add(path)
-    return prices
+def _read_dict_path(node: dict[str, Any], path: tuple[str, ...]) -> Any:
+    current: Any = node
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    return current
 
 
-def _pick_lowest_price(candidates: dict[int, set[str]]) -> Optional[float]:
-    if not candidates:
+def _is_premium_domain_item(item: dict[str, Any]) -> bool:
+    for flag_key in ("isPremium", "premium"):
+        flag_value = item.get(flag_key)
+        if isinstance(flag_value, bool) and flag_value:
+            return True
+        if isinstance(flag_value, str) and flag_value.strip().lower() == "true":
+            return True
+    tier_value = item.get("tier")
+    if isinstance(tier_value, str) and tier_value.strip().lower() == "premium":
+        return True
+    return False
+
+
+def _find_domain_object_for_query(payload: Any, domain_name: str) -> Optional[dict[str, Any]]:
+    normalized_query = _sanitize_strict_me_domain(domain_name) or str(domain_name or "").strip().lower()
+    if not normalized_query:
         return None
-    return round(min(candidates.keys()) / 100.0, 2)
 
+    candidate_items: list[dict[str, Any]] = []
+    if isinstance(payload, list):
+        candidate_items = [entry for entry in payload if isinstance(entry, dict)]
+    elif isinstance(payload, dict):
+        wrapped_results = _extract_results_list(payload)
+        if wrapped_results is not None:
+            candidate_items = [entry for entry in wrapped_results if isinstance(entry, dict)]
+        else:
+            candidate_items = [payload]
 
-def _find_numeric_in_named_nodes(
-    node: Any,
-    target_keys: set[str],
-    *,
-    path: str = "root",
-) -> dict[int, set[str]]:
-    candidates: dict[int, set[str]] = {}
-    if isinstance(node, dict):
-        for key, value in node.items():
-            child_path = f"{path}.{key}"
-            if key in target_keys:
-                extracted = _extract_numeric_values_from_price_node(value, child_path)
-                for amount, paths in extracted.items():
-                    candidates.setdefault(amount, set()).update(paths)
-            nested = _find_numeric_in_named_nodes(value, target_keys, path=child_path)
-            for amount, paths in nested.items():
-                candidates.setdefault(amount, set()).update(paths)
-    elif isinstance(node, list):
-        for idx, value in enumerate(node):
-            nested = _find_numeric_in_named_nodes(value, target_keys, path=f"{path}[{idx}]")
-            for amount, paths in nested.items():
-                candidates.setdefault(amount, set()).update(paths)
-    return candidates
-
-
-def _collect_all_raw_numeric_values(node: Any, path: str = "root") -> dict[int, set[str]]:
-    candidates: dict[int, set[str]] = {}
-    if isinstance(node, dict):
-        for key, value in node.items():
-            child_path = f"{path}.{key}"
-            parsed = _normalize_price(value)
-            if parsed is not None:
-                candidates.setdefault(_price_to_cents(parsed), set()).add(child_path)
-            nested = _collect_all_raw_numeric_values(value, child_path)
-            for amount, paths in nested.items():
-                candidates.setdefault(amount, set()).update(paths)
-    elif isinstance(node, list):
-        for idx, value in enumerate(node):
-            nested = _collect_all_raw_numeric_values(value, f"{path}[{idx}]")
-            for amount, paths in nested.items():
-                candidates.setdefault(amount, set()).update(paths)
-    else:
-        parsed = _normalize_price(node)
-        if parsed is not None:
-            candidates.setdefault(_price_to_cents(parsed), set()).add(path)
-    return candidates
-
-
-def get_verified_price_v3(item: dict[str, Any], domain: str) -> Optional[float]:
-    """
-    Triple-layer price extractor with mandatory fallback behavior.
-
-    Layer 1: root-level price/registerPrice/amount.
-    Layer 2: recursive scan under pricing/costs objects.
-    Layer 3: premium/raw numeric hunter across the full payload.
-    """
-    layer1_candidates: dict[int, set[str]] = {}
-    for key in ("price", "registerPrice", "amount"):
-        if key not in item:
-            continue
-        parsed = _normalize_price(item.get(key))
-        if parsed is not None:
-            layer1_candidates.setdefault(_price_to_cents(parsed), set()).add(f"root.{key}")
-    layer1_price = _pick_lowest_price(layer1_candidates)
-    if layer1_price is not None:
-        return layer1_price
-
-    layer2_candidates = _find_numeric_in_named_nodes(item, {"pricing", "costs"})
-    layer2_price = _pick_lowest_price(layer2_candidates)
-    if layer2_price is not None:
-        return layer2_price
-
-    layer3_candidates = _collect_all_raw_numeric_values(item)
-    layer3_price = _pick_lowest_price(layer3_candidates)
-    if layer3_price is not None:
-        LOGGER.warning(
-            "Premium/raw fallback price used for %s from path(s): %s",
-            domain,
-            sorted(layer3_candidates[min(layer3_candidates.keys())]),
-        )
-        return layer3_price
-
-    LOGGER.warning(
-        "Price verification failed for available domain %s; forwarding with manual check warning",
-        domain,
-    )
+    for item in candidate_items:
+        item_domain = _sanitize_strict_me_domain(_parse_item_domain(item)) or _parse_item_domain(item)
+        if item_domain and item_domain.lower() == normalized_query:
+            return item
     return None
+
+
+def _extract_price_from_paths(item: dict[str, Any], paths: tuple[tuple[str, ...], ...]) -> Optional[float]:
+    """Read the first valid path in declared order; path order is the deterministic precedence."""
+    for path in paths:
+        parsed = _coerce_non_negative_price(_read_dict_path(item, path))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def extract_spaceship_price(payload: Any, domain_name: str) -> Optional[float]:
+    """
+    Deterministic extractor:
+    1) match exact domain object,
+    2) resolve premium status,
+    3) read only status-specific price paths,
+    4) cast to float or return None.
+    """
+    item = _find_domain_object_for_query(payload, domain_name)
+    if item is None:
+        return None
+
+    if _is_premium_domain_item(item):
+        return _extract_price_from_paths(item, PREMIUM_PRICE_PATHS)
+    return _extract_price_from_paths(item, STANDARD_PRICE_PATHS)
 
 
 class SpaceshipClient:
@@ -764,8 +724,7 @@ def _parse_domain_item(item: dict, fallback_domain: str) -> Optional["DomainOppo
 
     Domain and pricing are accepted when:
       - Domain is a strict .me format with exactly one ".me" extension.
-      - Price is extracted via get_verified_price_v3 where possible.
-      - Unknown/expensive prices are still forwarded upstream for mandatory catch.
+      - Price is extracted deterministically via extract_spaceship_price.
     """
     fallback_sanitized = _sanitize_strict_me_domain(fallback_domain)
     item_sanitized = _sanitize_strict_me_domain(_parse_item_domain(item))
@@ -780,7 +739,7 @@ def _parse_domain_item(item: dict, fallback_domain: str) -> Optional["DomainOppo
         )
         return None
 
-    verified_price = get_verified_price_v3(item, normalized_domain)
+    verified_price = extract_spaceship_price(item, normalized_domain)
     ask_price = verified_price
     if verified_price is None:
         domain_price = PRICE_VERIFICATION_FAILED_TEXT
@@ -993,23 +952,15 @@ async def check_domains_with_single_retry(
 
 def format_available_alert(
     sanitized_domain: str,
-    domain_price: str,
-    status_emoji: str,
+    final_verified_price: float,
     buy_link: str,
-    *,
-    include_dollar_sign: bool = True,
 ) -> str:
-    clean_emoji = str(status_emoji).strip() if status_emoji is not None else DEFAULT_STATUS_EMOJI
-    if not clean_emoji:
-        clean_emoji = DEFAULT_STATUS_EMOJI
     clean_domain = html.escape(str(sanitized_domain or "").strip().lower())
-    clean_price = html.escape(str(domain_price or "").strip())
+    clean_price = f"{final_verified_price:.2f}"
     clean_link = html.escape(str(buy_link or "").strip(), quote=True)
-    dollar_sign = "$" if include_dollar_sign else ""
-    price_line = f"💰 **Price:** `{dollar_sign}{clean_price}`"
     return (
-        f"{clean_emoji} **Domain:** `{clean_domain}`\n"
-        f"{price_line}\n"
+        f"🟢 **Domain:** {clean_domain}\n"
+        f"💰 **Price:** ${clean_price}\n"
         f"🛒 **Buy:** <a href=\"{clean_link}\">Open in Spaceship</a>"
     )
 
@@ -1220,23 +1171,28 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                     sanitized_domain = _sanitize_strict_me_domain(opportunity.domain)
                     if not sanitized_domain:
                         continue
-                    domain_price = opportunity.domain_price
-                    if opportunity.ask_price_usd is None:
-                        status_emoji = DEFAULT_STATUS_EMOJI
-                    elif opportunity.ask_price_usd <= MAX_SUITABLE_PRICE_USD:
-                        status_emoji = "🟢"
-                    else:
-                        status_emoji = "🔴"
+                    final_verified_price = opportunity.ask_price_usd
+                    if final_verified_price is None:
+                        LOGGER.info(
+                            "Dropping domain=%s reason=parse_error price=None",
+                            opportunity.domain,
+                        )
+                        continue
+                    if final_verified_price > MAX_SUITABLE_PRICE_USD:
+                        LOGGER.info(
+                            "Dropping domain=%s reason=over_budget price=%.2f",
+                            opportunity.domain,
+                            final_verified_price,
+                        )
+                        continue
                     buy_link = f"https://www.spaceship.com/domain-search/?query={sanitized_domain}"
                     await send_telegram_notification(
                         app=app,
                         domain_name=opportunity.domain,
                         text=format_available_alert(
                             sanitized_domain=sanitized_domain,
-                            domain_price=domain_price,
-                            status_emoji=status_emoji,
+                            final_verified_price=final_verified_price,
                             buy_link=buy_link,
-                            include_dollar_sign=opportunity.ask_price_usd is not None,
                         ),
                         parse_mode="HTML",
                         disable_web_page_preview=True,
