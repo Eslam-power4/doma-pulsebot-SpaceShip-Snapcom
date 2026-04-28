@@ -434,7 +434,7 @@ def _score_price_key(key: str) -> int:
 
 
 def _coerce_candidate_price(value: Any) -> Optional[float]:
-    """Coerce candidate values while avoiding bool-to-int coercion."""
+    """Return a parsed non-negative price, skipping booleans and invalid values."""
     if isinstance(value, bool):
         return None
     return _coerce_non_negative_price(value)
@@ -446,6 +446,7 @@ def _collect_price_candidates(
     candidates: Optional[list[tuple[int, float]]] = None,
     numbers: Optional[list[float]] = None,
 ) -> tuple[list[tuple[int, float]], list[float]]:
+    """Collect scored price candidates and all numeric values from nested payloads."""
     if candidates is None:
         candidates = []
     if numbers is None:
@@ -477,9 +478,11 @@ def _collect_price_candidates(
 
 
 def _extract_price_from_payload_fallback(payload: Any) -> Optional[float]:
+    """Return best-scored price, else max numeric value, else None."""
     candidates, numbers = _collect_price_candidates(payload)
     if candidates:
-        return max(candidates)[1]
+        _, price = max(candidates)
+        return price
     if numbers:
         return max(numbers)
     return None
