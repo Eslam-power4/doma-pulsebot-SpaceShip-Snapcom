@@ -423,7 +423,7 @@ def _extract_price_from_paths(item: dict[str, Any], paths: tuple[tuple[str, ...]
 
 
 def _score_price_key(key: str) -> int:
-    normalized = str(key or "").strip().lower()
+    normalized = str(key).strip().lower() if key is not None else ""
     if not normalized:
         return 0
     score = 0
@@ -481,8 +481,7 @@ def _extract_price_from_payload_fallback(payload: Any) -> Optional[float]:
     """Return best-scored price, else max numeric value, else None."""
     candidates, numbers = _collect_price_candidates(payload)
     if candidates:
-        _, price = max(candidates)
-        return price
+        return max(candidates, key=lambda pair: (pair[0], pair[1]))[1]
     if numbers:
         return max(numbers)
     return None
