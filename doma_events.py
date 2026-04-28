@@ -45,23 +45,58 @@ MAX_SUITABLE_PRICE_USD = 50.00
 PREMIUM_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
     ("pricing", "premium", "register"),
     ("pricing", "premium", "registerPrice"),
+    ("pricing", "premium", "registration"),
+    ("pricing", "premium", "registrationPrice"),
     ("pricing", "premium", "price"),
     ("pricing", "premium", "amount"),
+    ("pricing", "premium", "cost"),
+    ("pricing", "premium", "value"),
     ("premiumPrice",),
     ("premium", "register"),
     ("premium", "registerPrice"),
+    ("premium", "registration"),
+    ("premium", "registrationPrice"),
     ("premium", "price"),
     ("premium", "amount"),
+    ("premium", "cost"),
+    ("premium", "value"),
 )
 STANDARD_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
     ("pricing", "standard", "register"),
     ("pricing", "standard", "registerPrice"),
+    ("pricing", "standard", "registration"),
+    ("pricing", "standard", "registrationPrice"),
     ("pricing", "standard", "price"),
     ("pricing", "standard", "amount"),
+    ("pricing", "standard", "cost"),
+    ("pricing", "standard", "value"),
     ("pricing", "register"),
     ("pricing", "registerPrice"),
+    ("pricing", "registration"),
+    ("pricing", "registrationPrice"),
+    ("pricing", "price"),
     ("price",),
     ("registerPrice",),
+    ("registrationPrice",),
+    ("amount",),
+    ("cost",),
+    ("value",),
+)
+# Weights are additive; higher totals win during fallback scoring, with higher prices breaking ties.
+# Explicit pricing keys are weighted higher than generic value-like fields.
+PRICE_KEY_WEIGHTS: tuple[tuple[str, int], ...] = (
+    ("price", 6),
+    ("register", 5),
+    ("registration", 5),
+    ("amount", 4),
+    ("cost", 4),
+    ("fee", 3),
+    ("value", 2),
+    ("premium", 2),
+    ("sale", 1),
+    ("retail", 1),
+    ("renew", 1),
+    ("usd", 1),
 )
 
 # Spaceship-specific throttle / batch controls
@@ -388,22 +423,97 @@ def _extract_price_from_paths(item: dict[str, Any], paths: tuple[tuple[str, ...]
     return None
 
 
+def _score_price_key(key: Any) -> int:
+    if key is None or not isinstance(key, str):
+        return 0
+    normalized = key.strip().lower()
+    if not normalized:
+        return 0
+    score = 0
+    for token, weight in PRICE_KEY_WEIGHTS:
+        if token in normalized:
+            score += weight
+    return score
+
+
+def _coerce_candidate_price(value: Any) -> Optional[float]:
+    """Return a parsed non-negative price, skipping booleans and invalid values."""
+    if isinstance(value, bool):
+        return None
+    return _coerce_non_negative_price(value)
+
+
+def _walk_price_candidates(
+    node: Any,
+    base_score: int,
+    candidates: list[tuple[int, float]],
+    numbers: list[float],
+) -> None:
+    if isinstance(node, dict):
+        for key, value in node.items():
+            key_score = _score_price_key(key)
+            combined_score = base_score + key_score
+            if isinstance(value, (dict, list)):
+                _walk_price_candidates(value, combined_score, candidates, numbers)
+            else:
+                parsed = _coerce_candidate_price(value)
+                if parsed is not None:
+                    numbers.append(parsed)
+                    if combined_score > 0:
+                        candidates.append((combined_score, parsed))
+    elif isinstance(node, list):
+        for value in node:
+            _walk_price_candidates(value, base_score, candidates, numbers)
+    else:
+        parsed = _coerce_candidate_price(node)
+        if parsed is not None:
+            numbers.append(parsed)
+            if base_score > 0:
+                candidates.append((base_score, parsed))
+
+
+def _collect_price_candidates(node: Any) -> tuple[list[tuple[int, float]], list[float]]:
+    """Collect scored price candidates and all numeric values from nested payloads."""
+    candidates: list[tuple[int, float]] = []
+    numbers: list[float] = []
+    _walk_price_candidates(node, 0, candidates, numbers)
+    return candidates, numbers
+
+
+def _extract_price_from_payload_fallback(payload: Any) -> Optional[float]:
+    """Return best-scored price via PRICE_KEY_WEIGHTS, else max numeric value from any field, else None."""
+    candidates, numbers = _collect_price_candidates(payload)
+    if candidates:
+        return max(candidates, key=lambda pair: (pair[0], pair[1]))[1]
+    if numbers:
+        return max(numbers)
+    return None
+
+
 # REPLACE HERE: Deterministic multi-layer Spaceship price extractor
 def extract_spaceship_price(payload: Any, domain_name: str) -> Optional[float]:
     """
     Deterministic extractor:
     1) match exact domain object,
     2) resolve premium status,
-    3) read only status-specific price paths,
-    4) cast to float or return None.
+    3) read status-specific price paths (then alternate paths),
+    4) fallback recursive scan for any price-like field,
+    5) return None only if payload contains no numeric value.
     """
     item = _find_domain_object_for_query(payload, domain_name)
     if item is None:
-        return None
+        return _extract_price_from_payload_fallback(payload)
 
-    if _is_premium_domain_item(item):
-        return _extract_price_from_paths(item, PREMIUM_PRICE_PATHS)
-    return _extract_price_from_paths(item, STANDARD_PRICE_PATHS)
+    is_premium = _is_premium_domain_item(item)
+    preferred_paths = PREMIUM_PRICE_PATHS if is_premium else STANDARD_PRICE_PATHS
+    secondary_paths = STANDARD_PRICE_PATHS if is_premium else PREMIUM_PRICE_PATHS
+
+    price = _extract_price_from_paths(item, preferred_paths)
+    if price is None:
+        price = _extract_price_from_paths(item, secondary_paths)
+    if price is not None:
+        return price
+    return _extract_price_from_payload_fallback(item)
 
 
 class SpaceshipClient:
