@@ -60,8 +60,6 @@ PREMIUM_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
     ("premium", "amount"),
     ("premium", "cost"),
     ("premium", "value"),
-    ("registerPrice",),
-    ("price",),
 )
 STANDARD_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
     ("pricing", "standard", "register"),
@@ -84,6 +82,7 @@ STANDARD_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
     ("cost",),
     ("value",),
 )
+# Higher weights prefer explicit pricing keys over generic value-like fields.
 PRICE_KEY_WEIGHTS: tuple[tuple[str, int], ...] = (
     ("price", 6),
     ("register", 5),
@@ -435,6 +434,7 @@ def _score_price_key(key: str) -> int:
 
 
 def _coerce_candidate_price(value: Any) -> Optional[float]:
+    """Coerce candidate values while avoiding bool-to-int coercion."""
     if isinstance(value, bool):
         return None
     return _coerce_non_negative_price(value)
@@ -479,7 +479,7 @@ def _collect_price_candidates(
 def _extract_price_from_payload_fallback(payload: Any) -> Optional[float]:
     candidates, numbers = _collect_price_candidates(payload)
     if candidates:
-        return max(candidates, key=lambda pair: (pair[0], pair[1]))[1]
+        return max(candidates)[1]
     if numbers:
         return max(numbers)
     return None
