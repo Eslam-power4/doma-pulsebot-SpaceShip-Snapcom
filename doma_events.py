@@ -82,7 +82,8 @@ STANDARD_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
     ("cost",),
     ("value",),
 )
-# Higher weights prefer explicit pricing keys over generic value-like fields.
+# Weights are additive; higher totals win during fallback scoring, with price as a tiebreaker.
+# Explicit pricing keys are weighted higher than generic value-like fields.
 PRICE_KEY_WEIGHTS: tuple[tuple[str, int], ...] = (
     ("price", 6),
     ("register", 5),
@@ -423,7 +424,9 @@ def _extract_price_from_paths(item: dict[str, Any], paths: tuple[tuple[str, ...]
 
 
 def _score_price_key(key: str) -> int:
-    normalized = str(key).strip().lower() if key is not None else ""
+    if key is None or not isinstance(key, str):
+        return 0
+    normalized = key.strip().lower()
     if not normalized:
         return 0
     score = 0
@@ -478,7 +481,7 @@ def _collect_price_candidates(
 
 
 def _extract_price_from_payload_fallback(payload: Any) -> Optional[float]:
-    """Return best-scored price, else max numeric value, else None."""
+    """Return the best-scored price via PRICE_KEY_WEIGHTS, else max numeric value, else None."""
     candidates, numbers = _collect_price_candidates(payload)
     if candidates:
         return max(candidates, key=lambda pair: (pair[0], pair[1]))[1]
