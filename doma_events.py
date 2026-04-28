@@ -484,7 +484,7 @@ def _extract_price_from_payload_fallback(payload: Any) -> Optional[float]:
     """Return best-scored price via PRICE_KEY_WEIGHTS, else max numeric value from any field, else None."""
     candidates, numbers = _collect_price_candidates(payload)
     if candidates:
-        return max(candidates)[1]
+        return max(candidates, key=lambda pair: (pair[0], pair[1]))[1]
     if numbers:
         return max(numbers)
     return None
