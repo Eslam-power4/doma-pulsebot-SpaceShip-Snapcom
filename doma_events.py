@@ -82,7 +82,7 @@ STANDARD_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
     ("cost",),
     ("value",),
 )
-# Weights are additive; higher totals win during fallback scoring, with price as a tiebreaker.
+# Weights are additive; higher totals win during fallback scoring, with higher prices breaking ties.
 # Explicit pricing keys are weighted higher than generic value-like fields.
 PRICE_KEY_WEIGHTS: tuple[tuple[str, int], ...] = (
     ("price", 6),
@@ -443,24 +443,18 @@ def _coerce_candidate_price(value: Any) -> Optional[float]:
     return _coerce_non_negative_price(value)
 
 
-def _collect_price_candidates(
+def _walk_price_candidates(
     node: Any,
-    base_score: int = 0,
-    candidates: Optional[list[tuple[int, float]]] = None,
-    numbers: Optional[list[float]] = None,
-) -> tuple[list[tuple[int, float]], list[float]]:
-    """Collect scored price candidates and all numeric values from nested payloads."""
-    if candidates is None:
-        candidates = []
-    if numbers is None:
-        numbers = []
-
+    base_score: int,
+    candidates: list[tuple[int, float]],
+    numbers: list[float],
+) -> None:
     if isinstance(node, dict):
         for key, value in node.items():
             key_score = _score_price_key(key)
             combined_score = base_score + key_score
             if isinstance(value, (dict, list)):
-                _collect_price_candidates(value, combined_score, candidates, numbers)
+                _walk_price_candidates(value, combined_score, candidates, numbers)
             else:
                 parsed = _coerce_candidate_price(value)
                 if parsed is not None:
@@ -469,7 +463,7 @@ def _collect_price_candidates(
                         candidates.append((combined_score, parsed))
     elif isinstance(node, list):
         for value in node:
-            _collect_price_candidates(value, base_score, candidates, numbers)
+            _walk_price_candidates(value, base_score, candidates, numbers)
     else:
         parsed = _coerce_candidate_price(node)
         if parsed is not None:
@@ -477,6 +471,12 @@ def _collect_price_candidates(
             if base_score > 0:
                 candidates.append((base_score, parsed))
 
+
+def _collect_price_candidates(node: Any) -> tuple[list[tuple[int, float]], list[float]]:
+    """Collect scored price candidates and all numeric values from nested payloads."""
+    candidates: list[tuple[int, float]] = []
+    numbers: list[float] = []
+    _walk_price_candidates(node, 0, candidates, numbers)
     return candidates, numbers
 
 
@@ -484,7 +484,8 @@ def _extract_price_from_payload_fallback(payload: Any) -> Optional[float]:
     """Return the best-scored price via PRICE_KEY_WEIGHTS, else max numeric value, else None."""
     candidates, numbers = _collect_price_candidates(payload)
     if candidates:
-        return max(candidates, key=lambda pair: (pair[0], pair[1]))[1]
+        _, price = max(candidates, key=lambda pair: (pair[0], pair[1]))
+        return price
     if numbers:
         return max(numbers)
     return None
