@@ -23,16 +23,16 @@ LOGGER = logging.getLogger(__name__)
 
 # ─── Tuning constants ────────────────────────────────────────────────────────
 MAIN_CHAT_ID = -1003736596502
-# Strict .me mode: all available alerts are routed to the fixed topic below.
-TELEGRAM_TOPIC_ID = 20253
-PRIORITY_TLDS = frozenset({".me"})
+# Strict .com mode: all available alerts are routed to the fixed topic below.
+TELEGRAM_TOPIC_ID = 33361
+PRIORITY_TLDS = frozenset({".com"})
 
 MIN_POLL_SECONDS = 1
 MIN_QUOTA_COOLDOWN_SECONDS = 30
 MIN_CIRCUIT_BREAKER_SECONDS = 30
 DEFAULT_FALLBACK_ASK_PRICE_USD = 10.0
 WATCHER_ERROR_RETRY_SECONDS = 5
-TARGET_TLDS = {".me"}
+TARGET_TLDS = {".com"}
 PROCESSED_STATUS_AVAILABLE = "Available"
 PROCESSED_STATUS_TAKEN = "Taken"
 PROCESSED_STATUS_ERROR = "Error"
@@ -123,6 +123,7 @@ class DomainOpportunity:
     ask_price_usd: Optional[float]
     domain_price: str
     is_suitable: bool
+    is_premium: bool
     source: str
     listing_url: str
     currency: str = "USD"
@@ -340,14 +341,14 @@ def _coerce_non_negative_price(value: Any) -> Optional[float]:
     return round(parsed, 2)
 
 
-# REPLACE HERE: Strict .me domain validator module
+# REPLACE HERE: Strict .com domain validator module
 def _sanitize_strict_me_domain(raw_domain: Any) -> str:
     """
-    Strictly validate and normalize a domain with exactly one .me extension.
+    Strictly validate and normalize a domain with exactly one .com extension.
 
     Rules:
     - no whitespace
-    - exactly one trailing .me extension
+    - exactly one trailing .com extension
     - keyword contains only [a-z0-9-]
     - keyword cannot start/end with '-'
     """
@@ -356,18 +357,18 @@ def _sanitize_strict_me_domain(raw_domain: Any) -> str:
         return ""
     if any(ch.isspace() for ch in clean_domain):
         return ""
-    if not clean_domain.endswith(".me"):
+    if not clean_domain.endswith(".com"):
         return ""
-    if clean_domain.count(".me") != 1:
+    if clean_domain.count(".com") != 1:
         return ""
-    keyword = clean_domain[:-3]
+    keyword = clean_domain[:-4]
     if not keyword or "." in keyword:
         return ""
     if not re.fullmatch(r"[a-z0-9-]+", keyword):
         return ""
     if keyword.startswith("-") or keyword.endswith("-"):
         return ""
-    return f"{keyword}.me"
+    return f"{keyword}.com"
 
 
 def _read_dict_path(node: dict[str, Any], path: tuple[str, ...]) -> Any:
@@ -834,7 +835,7 @@ def _parse_domain_item(item: dict, fallback_domain: str) -> Optional["DomainOppo
     Convert a single Spaceship domain-check result dict into a DomainOpportunity.
 
     Domain and pricing are accepted when:
-      - Domain is a strict .me format with exactly one ".me" extension.
+      - Domain is a strict .com format with exactly one ".com" extension.
       - Price is extracted deterministically via extract_spaceship_price.
     """
     fallback_sanitized = _sanitize_strict_me_domain(fallback_domain)
@@ -866,6 +867,7 @@ def _parse_domain_item(item: dict, fallback_domain: str) -> Optional["DomainOppo
         ask_price_usd=ask_price,
         domain_price=domain_price,
         is_suitable=(ask_price is not None and ask_price <= MAX_SUITABLE_PRICE_USD),
+        is_premium=_is_premium_domain_item(item),
         source="Spaceship Availability API",
         listing_url=buy_link,
         currency="USD",
@@ -990,8 +992,8 @@ def log_to_processed_csv(base_keyword: str, full_domain: str, status: str) -> No
 
 def _base_keyword_from_domain(full_domain: str) -> str:
     clean_domain = str(full_domain or "").strip().lower()
-    if clean_domain.endswith(".me"):
-        return clean_domain.removesuffix(".me")
+    if clean_domain.endswith(".com"):
+        return clean_domain.removesuffix(".com")
     return clean_domain.split(".", 1)[0] if "." in clean_domain else clean_domain
 
 
@@ -1065,27 +1067,43 @@ def format_available_alert(
     sanitized_domain: str,
     final_verified_price: float,
     buy_link: str,
+    pattern: str,
+    prefix: str,
+    is_premium: bool,
 ) -> str:
     clean_domain = html.escape(str(sanitized_domain or "").strip().lower())
     clean_price = f"{final_verified_price:.2f}"
     clean_link = html.escape(str(buy_link or "").strip(), quote=True)
+    clean_pattern = html.escape(str(pattern or "").strip())
+    clean_prefix = html.escape(str(prefix or "").strip())
+    premium_badge = " 💎 <b>[PREMIUM]</b>" if is_premium else ""
     return (
-        f"🟢 <b>Domain:</b> {clean_domain} | "
-        f"💰 <b>Price:</b> ${clean_price} | "
-        f"🛒 <b>Buy:</b> <a href=\"{clean_link}\">Spaceship Search URL</a>"
+        f"🟢 <b>Domain:</b> {clean_domain}{premium_badge}\n"
+        f"🧬 <b>Pattern:</b> {clean_pattern}\n"
+        f"🔠 <b>Prefix:</b> {clean_prefix}\n"
+        f"💰 <b>Price:</b> ${clean_price}\n"
+        f"🛒 <b>Buy:</b> <a href=\"{clean_link}\">Open in Spaceship</a>"
     )
 
 
 def format_verification_failed_alert(
     sanitized_domain: str,
     buy_link: str,
+    pattern: str,
+    prefix: str,
+    is_premium: bool,
 ) -> str:
     clean_domain = html.escape(str(sanitized_domain or "").strip().lower())
     clean_link = html.escape(str(buy_link or "").strip(), quote=True)
+    clean_pattern = html.escape(str(pattern or "").strip())
+    clean_prefix = html.escape(str(prefix or "").strip())
+    premium_badge = " 💎 <b>[PREMIUM]</b>" if is_premium else ""
     return (
-        f"🟡 <b>Domain:</b> {clean_domain} | "
-        f"💰 <b>Price:</b> ⚠️ {PRICE_VERIFICATION_FAILED_TEXT} | "
-        f"🛒 <b>Buy:</b> <a href=\"{clean_link}\">Spaceship Search URL</a>"
+        f"🟡 <b>Domain:</b> {clean_domain}{premium_badge}\n"
+        f"🧬 <b>Pattern:</b> {clean_pattern}\n"
+        f"🔠 <b>Prefix:</b> {clean_prefix}\n"
+        f"💰 <b>Price:</b> ⚠️ {PRICE_VERIFICATION_FAILED_TEXT}\n"
+        f"🛒 <b>Buy:</b> <a href=\"{clean_link}\">Open in Spaceship</a>"
     )
 
 
@@ -1124,22 +1142,31 @@ async def send_telegram_notification(
             raise
 
 
-def build_candidate_domains(vip_db: dict[str, VipRecord], cfg: WatcherConfig) -> list[str]:
+def build_candidate_domains(
+    vip_db: dict[str, VipRecord],
+    cfg: WatcherConfig,
+) -> tuple[list[str], dict[str, dict[str, str]]]:
     """Build candidate domains from VIP roots and high-value keyword permutations across allowed TLDs."""
     domains: set[str] = set()
+    metadata_by_domain: dict[str, dict[str, str]] = {}
     effective_tlds = _effective_allowed_tlds()
-    for root in vip_db.keys():
+    for root, record in vip_db.items():
         normalized_root = root.strip().lower()
         if not normalized_root:
             continue
         for tld in effective_tlds:
-            domains.add(f"{normalized_root}{tld}")
+            domain = f"{normalized_root}{tld}"
+            domains.add(domain)
+            metadata_by_domain[domain] = {
+                "pattern": record.pattern,
+                "prefix": record.prefix,
+            }
     for keyword in cfg.high_value_keywords:
         for tld in effective_tlds:
             domains.add(f"{keyword}{tld}")
             domains.add(f"get{keyword}{tld}")
             domains.add(f"my{keyword}{tld}")
-    return sorted(domains)
+    return sorted(domains), metadata_by_domain
 
 
 def select_circular_batch(items: list[str], cursor: int, batch_size: int) -> tuple[list[str], int]:
@@ -1237,7 +1264,7 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
             client = SpaceshipClient(session, cfg)
             vip_folder = Path(__file__).with_name("vip_data")
             active_vip_db = get_vip_database(vip_folder)
-            candidate_domains = build_candidate_domains(active_vip_db, cfg)
+            candidate_domains, metadata_by_domain = build_candidate_domains(active_vip_db, cfg)
             if not candidate_domains:
                 summary = {
                     "domains_checked": 0,
@@ -1261,8 +1288,8 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
             )
             app.bot_data["domain_cursor"] = next_cursor
             LOGGER.info("Fetching from Spaceship API: domains=%s", len(selected_domains))
-            me_count = sum(1 for d in selected_domains if d.endswith(".me"))
-            LOGGER.info("Priority coverage this cycle: .me=%s (total=%s)", me_count, len(selected_domains))
+            com_count = sum(1 for d in selected_domains if d.endswith(".com"))
+            LOGGER.info("Priority coverage this cycle: .com=%s (total=%s)", com_count, len(selected_domains))
             opportunities: list[DomainOpportunity] = []
             api_blocked_failed = 0
             for idx in range(0, len(selected_domains), SPACESHIP_BULK_BATCH_SIZE):
@@ -1299,12 +1326,18 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                     final_verified_price = opportunity.ask_price_usd
                     if final_verified_price is None:
                         buy_link = f"https://www.spaceship.com/domain-search/?query={sanitized_domain}"
+                        metadata = metadata_by_domain.get(sanitized_domain, {})
+                        pattern = metadata.get("pattern") or "N/A"
+                        prefix = metadata.get("prefix") or "N/A"
                         await send_telegram_notification(
                             app=app,
                             domain_name=opportunity.domain,
                             text=format_verification_failed_alert(
                                 sanitized_domain=sanitized_domain,
                                 buy_link=buy_link,
+                                pattern=pattern,
+                                prefix=prefix,
+                                is_premium=opportunity.is_premium,
                             ),
                             parse_mode="HTML",
                             disable_web_page_preview=True,
@@ -1324,6 +1357,9 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                         )
                         continue
                     buy_link = f"https://www.spaceship.com/domain-search/?query={sanitized_domain}"
+                    metadata = metadata_by_domain.get(sanitized_domain, {})
+                    pattern = metadata.get("pattern") or "N/A"
+                    prefix = metadata.get("prefix") or "N/A"
                     await send_telegram_notification(
                         app=app,
                         domain_name=opportunity.domain,
@@ -1331,6 +1367,9 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                             sanitized_domain=sanitized_domain,
                             final_verified_price=final_verified_price,
                             buy_link=buy_link,
+                            pattern=pattern,
+                            prefix=prefix,
+                            is_premium=opportunity.is_premium,
                         ),
                         parse_mode="HTML",
                         disable_web_page_preview=True,
