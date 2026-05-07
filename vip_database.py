@@ -59,14 +59,29 @@ def sanitize_and_build_domain(raw_keyword: str) -> str:
     Strictly sanitize user/raw keyword and return a safe .com domain.
 
     - trim + lower
-    - remove trailing '.com' exactly once
+    - remove any existing TLD/extension
     - keep only [a-z0-9-]
     - normalize repeated hyphens and edge hyphens
     """
     normalized = re.sub(r"\s+", "", str(raw_keyword or "").lower())
     if not normalized:
         return ""
+    normalized = re.sub(r"^[a-z][a-z0-9+.-]*://", "", normalized)
+    normalized = re.split(r"[/?#]", normalized, 1)[0]
+    if ":" in normalized:
+        normalized = normalized.split(":", 1)[0]
     base = _strip_trailing_com_suffixes(normalized)
+    labels = [label for label in base.split(".") if label]
+    if len(labels) >= 2:
+        tld = labels[-1]
+        sld = labels[-2]
+        common_cc_tld_second_level_labels = {"co", "com", "net", "org", "gov", "edu", "ac"}
+        if len(labels) >= 3 and len(tld) == 2 and sld in common_cc_tld_second_level_labels:
+            base = labels[-3]
+        else:
+            base = sld
+    elif labels:
+        base = labels[0]
     clean_base_word = re.sub(r"[^a-z0-9\-]", "", base)
     clean_base_word = MULTI_HYPHEN_RE.sub("-", clean_base_word).strip("-")
     if not clean_base_word:
