@@ -75,7 +75,8 @@ def sanitize_and_build_domain(raw_keyword: str) -> str:
     if len(labels) >= 2:
         tld = labels[-1]
         sld = labels[-2]
-        if len(labels) >= 3 and len(tld) == 2 and sld in {"co", "com", "net", "org", "gov", "edu", "ac"}:
+        cc_tld_second_level = {"co", "com", "net", "org", "gov", "edu", "ac"}
+        if len(labels) >= 3 and len(tld) == 2 and sld in cc_tld_second_level:
             base = labels[-3]
         else:
             base = sld
