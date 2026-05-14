@@ -13,7 +13,6 @@ concurrency:
 jobs:
   sniper-mission:
     runs-on: ubuntu-latest
-    timeout-minutes: 115 # ⏱️ 2. حماية الرصيد: إيقاف السيرفر إجبارياً قبل ما يكمل ساعتين عشان ميسحبش الحصة المجانية
     permissions:
       contents: write
 
@@ -35,6 +34,7 @@ jobs:
         pip install -r requirements.txt
 
     - name: 4. 🚀 Execute Sniper Engine (Unrestricted Stealth Mode)
+      timeout-minutes: 115 # ⏱️ 2. حماية الرصيد: إيقاف السيرفر إجبارياً قبل ما يكمل ساعتين عشان ميسحبش الحصة المجانية
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         SPACESHIP_API_KEY: ${{ secrets.SPACESHIP_API_KEY }}
@@ -58,7 +58,7 @@ jobs:
       run: |
         git config --global user.name "Sniper-AI-Architect"
         git config --global user.email "architect@sniper.local"
-        git add alerts.db processed_domains.csv || echo "No files to add"
+        git add -f alerts.db processed_domains.csv || echo "No files to add"
         
         if ! git diff-index --quiet HEAD; then
           git commit -m "Auto-Save: Preserving .COM domain state & DB [skip ci]"
