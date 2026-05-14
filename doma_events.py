@@ -1481,7 +1481,12 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                         vip_match_count += 1
                     else:
                         general_match_count += 1
-                    LOGGER.info("Telegram send success domain=%s", opportunity.domain)
+                    LOGGER.info(
+                        "✅ VERIFIED: Telegram send success domain=%s price=%.2f pattern=%s",
+                        opportunity.domain,
+                        final_verified_price,
+                        pattern,
+                    )
                 except Exception as send_exc:
                     LOGGER.exception("Telegram send failed domain=%s error=%s", opportunity.domain, send_exc)
 
