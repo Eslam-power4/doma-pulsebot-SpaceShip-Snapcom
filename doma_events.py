@@ -1014,16 +1014,20 @@ def load_processed_available_domains() -> set[str]:
                         continue
                     if index == PROCESSED_CSV_HEADER_ROW_INDEX:
                         normalized_headers = [str(cell or "").strip().lower() for cell in row]
-                        if (
-                            PROCESSED_CSV_HEADER_KEYWORD in normalized_headers
-                            or any(header in normalized_headers for header in PROCESSED_CSV_DOMAIN_HEADERS)
-                        ):
-                            for header in PROCESSED_CSV_DOMAIN_HEADERS:
-                                if header in normalized_headers:
-                                    domain_column_index = normalized_headers.index(header)
-                                    break
+                        header_domain_index = next(
+                            (
+                                normalized_headers.index(header)
+                                for header in PROCESSED_CSV_DOMAIN_HEADERS
+                                if header in normalized_headers
+                            ),
+                            None,
+                        )
+                        if header_domain_index is not None:
+                            domain_column_index = header_domain_index
+                            if PROCESSED_CSV_HEADER_KEYWORD not in normalized_headers:
+                                LOGGER.warning("Processed CSV header missing keyword column.")
                             continue
-                    if len(row) < PROCESSED_CSV_MIN_COLUMNS or len(row) <= domain_column_index:
+                    if len(row) < PROCESSED_CSV_MIN_COLUMNS or domain_column_index >= len(row):
                         continue
                     domain = str(row[domain_column_index]).strip().lower()
                     if domain:
