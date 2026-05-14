@@ -997,6 +997,8 @@ def load_processed_available_domains() -> set[str]:
     Includes domains marked as Available, Taken, or Error to prevent re-checking.
     """
     output_path = Path(__file__).with_name("processed_domains.csv")
+    header_row_index = 0
+    min_required_columns = 2
     processed_domains: set[str] = set()
     if not output_path.exists():
         return processed_domains
@@ -1007,9 +1009,9 @@ def load_processed_available_domains() -> set[str]:
                 for index, row in enumerate(reader):
                     if not row:
                         continue
-                    if index == 0 and str(row[0]).strip().lower() == "keyword":
+                    if index == header_row_index and str(row[0]).strip().lower() == "keyword":
                         continue
-                    if len(row) < 2:
+                    if len(row) < min_required_columns:
                         continue
                     domain = str(row[1]).strip().lower()
                     if domain:
