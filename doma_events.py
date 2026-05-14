@@ -1425,6 +1425,8 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                         continue
                     final_verified_price = opportunity.ask_price_usd
                     if final_verified_price is None:
+                        final_verified_price = _coerce_non_negative_price(opportunity.domain_price)
+                    if final_verified_price is None:
                         buy_link = f"https://www.spaceship.com/domain-search/?query={sanitized_domain}"
                         metadata = metadata_by_domain.get(sanitized_domain, {})
                         pattern = metadata.get("pattern") or "N/A"
