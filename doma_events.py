@@ -116,6 +116,7 @@ SPACESHIP_STUBBORN_MAX_BACKOFF_SECONDS = 32
 DEFAULT_STATUS_EMOJI = "🟡"
 PRICE_VERIFICATION_FAILED_TEXT = "Verification Failed (Check Manually!)"
 PROCESSED_CSV_LOCK = threading.Lock()
+PROCESSED_CSV_PATH = Path(__file__).with_name("processed_domains.csv")
 
 
 class SpaceshipCircuitOpenError(Exception):
@@ -987,7 +988,7 @@ def log_to_processed_csv(base_keyword: str, full_domain: str, status: str) -> No
     - Status is constrained to: Available, Taken, Error.
     """
     normalized_status = status if status in PROCESSED_STATUS_ALLOWED else PROCESSED_STATUS_ERROR
-    output_path = Path(__file__).with_name("processed_domains.csv")
+    output_path = PROCESSED_CSV_PATH
 
     with PROCESSED_CSV_LOCK:
         try:
@@ -1012,7 +1013,7 @@ def load_processed_available_domains() -> set[str]:
     Load processed_domains.csv and return domains previously marked as Available.
     If the status column is missing, processed memory is ignored to avoid skipping non-available domains.
     """
-    output_path = Path(__file__).with_name("processed_domains.csv")
+    output_path = PROCESSED_CSV_PATH
     processed_domains: set[str] = set()
     domain_column_index = PROCESSED_CSV_DEFAULT_DOMAIN_COLUMN_INDEX
     status_column_index: Optional[int] = None
@@ -1493,21 +1494,20 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
             }
             app.bot_data["scan_cycle_counter"] = int(app.bot_data.get("scan_cycle_counter", 0)) + 1
             app.bot_data["latest_scan_summary"] = summary
-            processed_csv_path = Path(__file__).with_name("processed_domains.csv")
             try:
-                if processed_csv_path.exists() and processed_csv_path.stat().st_size > 0:
-                    with processed_csv_path.open("rb") as handle:
+                if PROCESSED_CSV_PATH.exists() and PROCESSED_CSV_PATH.stat().st_size > 0:
+                    with PROCESSED_CSV_PATH.open("rb") as handle:
                         await app.bot.send_document(
                             chat_id=int(MAIN_CHAT_ID),
                             message_thread_id=TELEGRAM_TOPIC_ID,
                             document=handle,
-                            filename=processed_csv_path.name,
+                            filename=PROCESSED_CSV_PATH.name,
                         )
                     LOGGER.info("Processed CSV sent to Telegram topic=%s", TELEGRAM_TOPIC_ID)
                 else:
                     LOGGER.info("Processed CSV missing or empty; skipping Telegram upload.")
             except Exception as csv_exc:
-                LOGGER.exception("Processed CSV upload failed: %s", csv_exc)
+                LOGGER.exception("Processed CSV upload failed")
             return summary
     finally:
         store.close()
