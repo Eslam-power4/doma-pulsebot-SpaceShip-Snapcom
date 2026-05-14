@@ -43,6 +43,7 @@ PROCESSED_STATUS_ALLOWED = {
 }
 PROCESSED_CSV_HEADER_ROW_INDEX = 0
 PROCESSED_CSV_MIN_COLUMNS = 2
+PROCESSED_CSV_HEADER_KEYWORD = "keyword"
 MAX_SUITABLE_PRICE_USD = 50.00
 PREMIUM_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
     ("pricing", "premium", "register"),
@@ -1009,7 +1010,10 @@ def load_processed_available_domains() -> set[str]:
                 for index, row in enumerate(reader):
                     if not row:
                         continue
-                    if index == PROCESSED_CSV_HEADER_ROW_INDEX and str(row[0]).strip().lower() == "keyword":
+                    if (
+                        index == PROCESSED_CSV_HEADER_ROW_INDEX
+                        and str(row[0]).strip().lower() == PROCESSED_CSV_HEADER_KEYWORD
+                    ):
                         continue
                     if len(row) < PROCESSED_CSV_MIN_COLUMNS:
                         continue
