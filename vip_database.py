@@ -26,12 +26,15 @@ def _strip_trailing_tld_suffixes(value: str) -> str:
     if not clean:
         return ""
     labels = [label for label in clean.split(".") if label]
+    original_label_count = len(labels)
     # Drop repeated trailing labels from malformed inputs (e.g., example.com.com) while keeping one label.
     while len(labels) >= 2 and labels[-1] == labels[-2]:
         labels.pop()
     if not labels:
         return ""
     if len(labels) == 1:
+        if original_label_count > 1 and labels[0] in COMMON_CC_TLD_SECOND_LEVEL_LABELS:
+            return ""
         return labels[0]
     tld = labels[-1]
     sld = labels[-2]

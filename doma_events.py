@@ -1010,6 +1010,7 @@ def log_to_processed_csv(base_keyword: str, full_domain: str, status: str) -> No
 def load_processed_available_domains() -> set[str]:
     """
     Load processed_domains.csv and return domains previously marked as Available.
+    If the status column is missing, processed memory is ignored to avoid skipping non-available domains.
     """
     output_path = Path(__file__).with_name("processed_domains.csv")
     processed_domains: set[str] = set()
