@@ -29,6 +29,7 @@ jobs:
         pip install -r requirements.txt
 
     - name: 4. Execute Sniper Bot (Stealth Mode)
+      timeout-minutes: 115
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         SPACESHIP_API_KEY: ${{ secrets.SPACESHIP_API_KEY }}

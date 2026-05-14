@@ -18,13 +18,29 @@ VIP_DATA_CACHE: dict[str, VipRecord] = {}
 VIP_DATA_LOCK = threading.Lock()
 ENGLISH_LETTERS_RE = re.compile(r"[A-Za-z]")
 MULTI_HYPHEN_RE = re.compile(r"-{2,}")
+COMMON_CC_TLD_SECOND_LEVEL_LABELS = {"co", "com", "net", "org", "gov", "edu", "ac"}
 
 
-def _strip_trailing_com_suffixes(value: str) -> str:
-    clean = value
-    while clean.endswith(".com"):
-        clean = clean[:-4]
-    return clean
+def _strip_trailing_tld_suffixes(value: str) -> str:
+    clean = str(value or "").strip()
+    if not clean:
+        return ""
+    labels = [label for label in clean.split(".") if label]
+    original_label_count = len(labels)
+    # Drop repeated trailing labels from malformed inputs (e.g., example.com.com) while keeping one label.
+    while len(labels) >= 2 and labels[-1] == labels[-2]:
+        labels.pop()
+    if not labels:
+        return ""
+    if len(labels) == 1:
+        if original_label_count > 1 and labels[0] in COMMON_CC_TLD_SECOND_LEVEL_LABELS:
+            return ""
+        return labels[0]
+    tld = labels[-1]
+    sld = labels[-2]
+    if len(labels) >= 3 and len(tld) == 2 and sld in COMMON_CC_TLD_SECOND_LEVEL_LABELS:
+        return labels[-3]
+    return sld
 
 
 def _extract_keyword_with_index(row: list[Any]) -> tuple[str, int]:
@@ -34,7 +50,7 @@ def _extract_keyword_with_index(row: list[Any]) -> tuple[str, int]:
         value = str(cell or "").strip()
         if not ENGLISH_LETTERS_RE.search(value):
             continue
-        value = _strip_trailing_com_suffixes(value.lower().strip())
+        value = _strip_trailing_tld_suffixes(value.lower().strip())
         if len(value) <= 1:
             continue
         return value, index
@@ -70,18 +86,7 @@ def sanitize_and_build_domain(raw_keyword: str) -> str:
     normalized = re.split(r"[/?#]", normalized, 1)[0]
     if ":" in normalized:
         normalized = normalized.split(":", 1)[0]
-    base = _strip_trailing_com_suffixes(normalized)
-    labels = [label for label in base.split(".") if label]
-    if len(labels) >= 2:
-        tld = labels[-1]
-        sld = labels[-2]
-        common_cc_tld_second_level_labels = {"co", "com", "net", "org", "gov", "edu", "ac"}
-        if len(labels) >= 3 and len(tld) == 2 and sld in common_cc_tld_second_level_labels:
-            base = labels[-3]
-        else:
-            base = sld
-    elif labels:
-        base = labels[0]
+    base = _strip_trailing_tld_suffixes(normalized)
     clean_base_word = re.sub(r"[^a-z0-9\-]", "", base)
     clean_base_word = MULTI_HYPHEN_RE.sub("-", clean_base_word).strip("-")
     if not clean_base_word:
