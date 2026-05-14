@@ -342,7 +342,7 @@ def _coerce_non_negative_price(value: Any) -> Optional[float]:
 
 
 # REPLACE HERE: Strict .com domain validator module
-def _sanitize_strict_me_domain(raw_domain: Any) -> str:
+def _sanitize_strict_com_domain(raw_domain: Any) -> str:
     """
     Strictly validate and normalize a domain with exactly one .com extension.
 
@@ -394,7 +394,7 @@ def _is_premium_domain_item(item: dict[str, Any]) -> bool:
 
 
 def _find_domain_object_for_query(payload: Any, domain_name: str) -> Optional[dict[str, Any]]:
-    normalized_query = _sanitize_strict_me_domain(domain_name) or str(domain_name or "").strip().lower()
+    normalized_query = _sanitize_strict_com_domain(domain_name) or str(domain_name or "").strip().lower()
     if not normalized_query:
         return None
 
@@ -409,7 +409,7 @@ def _find_domain_object_for_query(payload: Any, domain_name: str) -> Optional[di
             candidate_items = [payload]
 
     for item in candidate_items:
-        item_domain = _sanitize_strict_me_domain(_parse_item_domain(item)) or _parse_item_domain(item)
+        item_domain = _sanitize_strict_com_domain(_parse_item_domain(item)) or _parse_item_domain(item)
         if item_domain and item_domain.lower() == normalized_query:
             return item
     return None
@@ -838,8 +838,8 @@ def _parse_domain_item(item: dict, fallback_domain: str) -> Optional["DomainOppo
       - Domain is a strict .com format with exactly one ".com" extension.
       - Price is extracted deterministically via extract_spaceship_price.
     """
-    fallback_sanitized = _sanitize_strict_me_domain(fallback_domain)
-    item_sanitized = _sanitize_strict_me_domain(_parse_item_domain(item))
+    fallback_sanitized = _sanitize_strict_com_domain(fallback_domain)
+    item_sanitized = _sanitize_strict_com_domain(_parse_item_domain(item))
     normalized_domain = item_sanitized or fallback_sanitized
     if not normalized_domain:
         return None
@@ -990,6 +990,37 @@ def log_to_processed_csv(base_keyword: str, full_domain: str, status: str) -> No
             )
 
 
+def load_processed_available_domains() -> set[str]:
+    """
+    Load processed_domains.csv and return ALL previously checked domains.
+
+    Includes domains marked as Available, Taken, or Error to prevent re-checking.
+    """
+    output_path = Path(__file__).with_name("processed_domains.csv")
+    processed_domains: set[str] = set()
+    if not output_path.exists():
+        return processed_domains
+    with PROCESSED_CSV_LOCK:
+        try:
+            with output_path.open("r", encoding="utf-8", newline="") as handle:
+                reader = csv.reader(handle)
+                for index, row in enumerate(reader):
+                    if not row:
+                        continue
+                    if index == 0 and str(row[0]).strip().lower() == "keyword":
+                        continue
+                    if len(row) < 2:
+                        continue
+                    domain = str(row[1]).strip().lower()
+                    if domain:
+                        processed_domains.add(domain)
+        except OSError as exc:
+            LOGGER.warning("Failed reading processed domain memory: %s", exc)
+        except csv.Error as exc:
+            LOGGER.warning("Malformed processed_domains.csv: %s", exc)
+    return processed_domains
+
+
 def _base_keyword_from_domain(full_domain: str) -> str:
     clean_domain = str(full_domain or "").strip().lower()
     if clean_domain.endswith(".com"):
@@ -1011,7 +1042,7 @@ async def check_domains_with_single_retry(
     """
     normalized_domains = []
     for raw_domain in domains:
-        sanitized_domain = _sanitize_strict_me_domain(raw_domain)
+        sanitized_domain = _sanitize_strict_com_domain(raw_domain)
         if not sanitized_domain:
             LOGGER.warning("Skipping invalid domain before API call: %s", raw_domain)
             continue
@@ -1265,6 +1296,11 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
             vip_folder = Path(__file__).with_name("vip_data")
             active_vip_db = get_vip_database(vip_folder)
             candidate_domains, metadata_by_domain = build_candidate_domains(active_vip_db, cfg)
+            processed_domains = load_processed_available_domains()
+            if processed_domains:
+                candidate_domains = [
+                    domain for domain in candidate_domains if domain not in processed_domains
+                ]
             if not candidate_domains:
                 summary = {
                     "domains_checked": 0,
@@ -1320,7 +1356,7 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                         continue
                     if store.has_alerted(fixed_chat_id, opportunity.domain):
                         continue
-                    sanitized_domain = _sanitize_strict_me_domain(opportunity.domain)
+                    sanitized_domain = _sanitize_strict_com_domain(opportunity.domain)
                     if not sanitized_domain:
                         continue
                     final_verified_price = opportunity.ask_price_usd
