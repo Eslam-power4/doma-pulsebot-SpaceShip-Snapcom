@@ -46,6 +46,7 @@ PROCESSED_CSV_DEFAULT_DOMAIN_COLUMN_INDEX = 1
 PROCESSED_CSV_MIN_COLUMNS = 2
 PROCESSED_CSV_HEADER_KEYWORD = "keyword"
 PROCESSED_CSV_DOMAIN_HEADERS = ("full_domain", "domain")
+PROCESSED_CSV_STATUS_HEADERS = ("status",)
 MAX_SUITABLE_PRICE_USD = 50.00
 PREMIUM_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
     ("pricing", "premium", "register"),
@@ -300,6 +301,17 @@ class AlertStore:
             (chat_id, domain.lower(), source, datetime.now(timezone.utc).isoformat()),
         )
         self.conn.commit()
+
+    def alerted_domains(self, chat_id: int) -> set[str]:
+        rows = self.conn.execute(
+            "SELECT domain FROM sent_alerts WHERE chat_id = ?",
+            (chat_id,),
+        ).fetchall()
+        return {
+            str(row[0]).strip().lower()
+            for row in rows
+            if row and isinstance(row[0], str) and row[0].strip()
+        }
 
     def close(self) -> None:
         self.conn.close()
@@ -997,13 +1009,12 @@ def log_to_processed_csv(base_keyword: str, full_domain: str, status: str) -> No
 
 def load_processed_available_domains() -> set[str]:
     """
-    Load processed_domains.csv and return ALL previously checked domains.
-
-    Includes domains marked as Available, Taken, or Error to prevent re-checking.
+    Load processed_domains.csv and return domains previously marked as Available.
     """
     output_path = Path(__file__).with_name("processed_domains.csv")
     processed_domains: set[str] = set()
     domain_column_index = PROCESSED_CSV_DEFAULT_DOMAIN_COLUMN_INDEX
+    status_column_index: Optional[int] = None
     if not output_path.exists():
         return processed_domains
     with PROCESSED_CSV_LOCK:
@@ -1030,12 +1041,26 @@ def load_processed_available_domains() -> set[str]:
                             domain_column_index = header_domain_index
                             if PROCESSED_CSV_HEADER_KEYWORD not in normalized_headers:
                                 LOGGER.warning("Processed CSV header missing keyword column.")
+                        header_status_index = next(
+                            (
+                                normalized_headers.index(header)
+                                for header in PROCESSED_CSV_STATUS_HEADERS
+                                if header in normalized_headers
+                            ),
+                            None,
+                        )
+                        if header_status_index is not None:
+                            status_column_index = header_status_index
                             # Always skip the header row after parsing columns.
                             continue
                     min_columns_required = max(PROCESSED_CSV_MIN_COLUMNS, domain_column_index + 1)
                     if len(row) < min_columns_required:
                         continue
                     domain = str(row[domain_column_index]).strip().lower()
+                    if status_column_index is not None and len(row) > status_column_index:
+                        status_value = str(row[status_column_index]).strip().lower()
+                        if status_value != PROCESSED_STATUS_AVAILABLE.lower():
+                            continue
                     if domain:
                         processed_domains.add(domain)
         except OSError as exc:
@@ -1321,9 +1346,11 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
             active_vip_db = get_vip_database(vip_folder)
             candidate_domains, metadata_by_domain = build_candidate_domains(active_vip_db, cfg)
             processed_domains = load_processed_available_domains()
-            if processed_domains:
+            already_alerted = store.alerted_domains(MAIN_CHAT_ID)
+            skip_domains = processed_domains | already_alerted
+            if skip_domains:
                 candidate_domains = [
-                    domain for domain in candidate_domains if domain not in processed_domains
+                    domain for domain in candidate_domains if domain not in skip_domains
                 ]
             if not candidate_domains:
                 summary = {
