@@ -44,6 +44,7 @@ PROCESSED_STATUS_ALLOWED = {
 PROCESSED_CSV_HEADER_ROW_INDEX = 0
 PROCESSED_CSV_MIN_COLUMNS = 2
 PROCESSED_CSV_HEADER_KEYWORD = "keyword"
+PROCESSED_CSV_DOMAIN_HEADERS = ("full_domain", "domain")
 MAX_SUITABLE_PRICE_USD = 50.00
 PREMIUM_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
     ("pricing", "premium", "register"),
@@ -1001,6 +1002,7 @@ def load_processed_available_domains() -> set[str]:
     """
     output_path = Path(__file__).with_name("processed_domains.csv")
     processed_domains: set[str] = set()
+    domain_column_index = 1
     if not output_path.exists():
         return processed_domains
     with PROCESSED_CSV_LOCK:
@@ -1010,14 +1012,20 @@ def load_processed_available_domains() -> set[str]:
                 for index, row in enumerate(reader):
                     if not row:
                         continue
-                    if (
-                        index == PROCESSED_CSV_HEADER_ROW_INDEX
-                        and str(row[0]).strip().lower() == PROCESSED_CSV_HEADER_KEYWORD
-                    ):
+                    if index == PROCESSED_CSV_HEADER_ROW_INDEX:
+                        normalized_headers = [str(cell or "").strip().lower() for cell in row]
+                        if (
+                            PROCESSED_CSV_HEADER_KEYWORD in normalized_headers
+                            or any(header in normalized_headers for header in PROCESSED_CSV_DOMAIN_HEADERS)
+                        ):
+                            for header in PROCESSED_CSV_DOMAIN_HEADERS:
+                                if header in normalized_headers:
+                                    domain_column_index = normalized_headers.index(header)
+                                    break
+                            continue
+                    if len(row) < PROCESSED_CSV_MIN_COLUMNS or len(row) <= domain_column_index:
                         continue
-                    if len(row) < PROCESSED_CSV_MIN_COLUMNS:
-                        continue
-                    domain = str(row[1]).strip().lower()
+                    domain = str(row[domain_column_index]).strip().lower()
                     if domain:
                         processed_domains.add(domain)
         except OSError as exc:
