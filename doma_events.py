@@ -1501,23 +1501,25 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                     if PROCESSED_CSV_PATH.exists() and PROCESSED_CSV_PATH.stat().st_size > 0:
                         csv_payload = PROCESSED_CSV_PATH.read_bytes()
                 if csv_payload:
-                    with io.BytesIO(csv_payload) as handle:
+                    handle = io.BytesIO(csv_payload)
+                    try:
                         await app.bot.send_document(
                             chat_id=int(MAIN_CHAT_ID),
                             message_thread_id=TELEGRAM_TOPIC_ID,
                             document=handle,
                             filename=PROCESSED_CSV_PATH.name,
                         )
+                    finally:
+                        handle.close()
                     LOGGER.info("Processed CSV sent to Telegram topic=%s", TELEGRAM_TOPIC_ID)
                 else:
                     LOGGER.info("Processed CSV missing or empty; skipping Telegram upload.")
-            except (OSError, TelegramError) as exc:
+            except (OSError, TelegramError):
                 LOGGER.exception(
-                    "Processed CSV upload failed path=%s chat_id=%s topic_id=%s error=%s",
+                    "Processed CSV upload failed path=%s chat_id=%s topic_id=%s",
                     PROCESSED_CSV_PATH,
                     MAIN_CHAT_ID,
                     TELEGRAM_TOPIC_ID,
-                    exc,
                 )
             return summary
     finally:
