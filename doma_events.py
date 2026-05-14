@@ -1426,6 +1426,10 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                     final_verified_price = opportunity.ask_price_usd
                     if final_verified_price is None:
                         final_verified_price = _coerce_non_negative_price(opportunity.domain_price)
+                    # Standard (non-premium) domains without API prices use default standard pricing.
+                    # Premium domains missing prices are treated as verification failures.
+                    if final_verified_price is None and not opportunity.is_premium:
+                        final_verified_price = DEFAULT_FALLBACK_ASK_PRICE_USD
                     if final_verified_price is None:
                         buy_link = f"https://www.spaceship.com/domain-search/?query={sanitized_domain}"
                         metadata = metadata_by_domain.get(sanitized_domain, {})
