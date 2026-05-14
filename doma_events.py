@@ -1057,6 +1057,7 @@ def load_processed_available_domains() -> set[str]:
                             LOGGER.warning(
                                 "Processed CSV header missing status column; skipping processed memory."
                             )
+                            return processed_domains
                         # Always skip the header row after parsing columns.
                         continue
                     min_columns_required = max(PROCESSED_CSV_MIN_COLUMNS, domain_column_index + 1)
@@ -1066,7 +1067,7 @@ def load_processed_available_domains() -> set[str]:
                     status_value: Optional[str] = None
                     if status_column_index is not None and len(row) > status_column_index:
                         status_value = str(row[status_column_index]).strip().lower()
-                    if status_value is None or status_value != PROCESSED_STATUS_AVAILABLE.lower():
+                    if status_value != PROCESSED_STATUS_AVAILABLE.lower():
                         continue
                     if domain:
                         processed_domains.add(domain)
