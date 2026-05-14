@@ -1015,6 +1015,7 @@ def load_processed_available_domains() -> set[str]:
     processed_domains: set[str] = set()
     domain_column_index = PROCESSED_CSV_DEFAULT_DOMAIN_COLUMN_INDEX
     status_column_index: Optional[int] = None
+    saw_header = False
     if not output_path.exists():
         return processed_domains
     with PROCESSED_CSV_LOCK:
@@ -1025,6 +1026,7 @@ def load_processed_available_domains() -> set[str]:
                     if not row:
                         continue
                     if index == PROCESSED_CSV_HEADER_ROW_INDEX:
+                        saw_header = True
                         normalized_headers = [
                             str(cell).strip().lower() if cell is not None else ""
                             for cell in row
@@ -1052,9 +1054,11 @@ def load_processed_available_domains() -> set[str]:
                         if header_status_index is not None:
                             status_column_index = header_status_index
                         else:
-                            LOGGER.warning("Processed CSV header missing status column.")
-                            # Always skip the header row after parsing columns.
-                            continue
+                            LOGGER.warning(
+                                "Processed CSV header missing status column; skipping processed memory."
+                            )
+                        # Always skip the header row after parsing columns.
+                        continue
                     min_columns_required = max(PROCESSED_CSV_MIN_COLUMNS, domain_column_index + 1)
                     if len(row) < min_columns_required:
                         continue
@@ -1070,6 +1074,8 @@ def load_processed_available_domains() -> set[str]:
             LOGGER.warning("Failed reading processed domain memory: %s", exc)
         except csv.Error as exc:
             LOGGER.warning("Malformed processed_domains.csv: %s", exc)
+    if not saw_header:
+        LOGGER.warning("Processed CSV header row missing; skipping processed memory.")
     return processed_domains
 
 
