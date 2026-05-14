@@ -42,6 +42,7 @@ PROCESSED_STATUS_ALLOWED = {
     PROCESSED_STATUS_ERROR,
 }
 PROCESSED_CSV_HEADER_ROW_INDEX = 0
+PROCESSED_CSV_DEFAULT_DOMAIN_COLUMN_INDEX = 1
 PROCESSED_CSV_MIN_COLUMNS = 2
 PROCESSED_CSV_HEADER_KEYWORD = "keyword"
 PROCESSED_CSV_DOMAIN_HEADERS = ("full_domain", "domain")
@@ -1002,7 +1003,7 @@ def load_processed_available_domains() -> set[str]:
     """
     output_path = Path(__file__).with_name("processed_domains.csv")
     processed_domains: set[str] = set()
-    domain_column_index = 1
+    domain_column_index = PROCESSED_CSV_DEFAULT_DOMAIN_COLUMN_INDEX
     if not output_path.exists():
         return processed_domains
     with PROCESSED_CSV_LOCK:
@@ -1026,6 +1027,7 @@ def load_processed_available_domains() -> set[str]:
                             domain_column_index = header_domain_index
                             if PROCESSED_CSV_HEADER_KEYWORD not in normalized_headers:
                                 LOGGER.warning("Processed CSV header missing keyword column.")
+                            # Header row parsed; skip to next record.
                             continue
                     if len(row) < PROCESSED_CSV_MIN_COLUMNS or domain_column_index >= len(row):
                         continue
