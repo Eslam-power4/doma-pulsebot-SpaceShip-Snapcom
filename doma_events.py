@@ -1016,6 +1016,7 @@ def load_processed_available_domains() -> set[str]:
     domain_column_index = PROCESSED_CSV_DEFAULT_DOMAIN_COLUMN_INDEX
     status_column_index: Optional[int] = None
     saw_header = False
+    available_status = PROCESSED_STATUS_AVAILABLE.lower()
     if not output_path.exists():
         return processed_domains
     with PROCESSED_CSV_LOCK:
@@ -1067,16 +1068,16 @@ def load_processed_available_domains() -> set[str]:
                     status_value: Optional[str] = None
                     if status_column_index is not None and len(row) > status_column_index:
                         status_value = str(row[status_column_index]).strip().lower()
-                    if status_value != PROCESSED_STATUS_AVAILABLE.lower():
+                    if status_value != available_status:
                         continue
                     if domain:
                         processed_domains.add(domain)
+            if not saw_header:
+                LOGGER.warning("Processed CSV header row missing; skipping processed memory.")
         except OSError as exc:
             LOGGER.warning("Failed reading processed domain memory: %s", exc)
         except csv.Error as exc:
             LOGGER.warning("Malformed processed_domains.csv: %s", exc)
-    if not saw_header:
-        LOGGER.warning("Processed CSV header row missing; skipping processed memory.")
     return processed_domains
 
 
