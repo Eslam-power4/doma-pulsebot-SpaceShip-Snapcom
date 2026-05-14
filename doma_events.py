@@ -1,7 +1,6 @@
 import asyncio
 import csv
 import html
-import io
 import logging
 import os
 import random
@@ -14,7 +13,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import aiohttp
-from telegram import InlineKeyboardMarkup
+from telegram import InlineKeyboardMarkup, InputFile
 from telegram.error import RetryAfter, TelegramError
 from telegram.ext import Application
 
@@ -1501,16 +1500,12 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                     if PROCESSED_CSV_PATH.exists() and PROCESSED_CSV_PATH.stat().st_size > 0:
                         csv_payload = PROCESSED_CSV_PATH.read_bytes()
                 if csv_payload:
-                    handle = io.BytesIO(csv_payload)
-                    try:
-                        await app.bot.send_document(
-                            chat_id=int(MAIN_CHAT_ID),
-                            message_thread_id=TELEGRAM_TOPIC_ID,
-                            document=handle,
-                            filename=PROCESSED_CSV_PATH.name,
-                        )
-                    finally:
-                        handle.close()
+                    document = InputFile(csv_payload, filename=PROCESSED_CSV_PATH.name)
+                    await app.bot.send_document(
+                        chat_id=int(MAIN_CHAT_ID),
+                        message_thread_id=TELEGRAM_TOPIC_ID,
+                        document=document,
+                    )
                     LOGGER.info("Processed CSV sent to Telegram topic=%s", TELEGRAM_TOPIC_ID)
                 else:
                     LOGGER.info("Processed CSV missing or empty; skipping Telegram upload.")
