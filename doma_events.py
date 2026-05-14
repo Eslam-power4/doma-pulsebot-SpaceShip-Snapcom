@@ -1062,14 +1062,6 @@ def load_processed_available_domains() -> set[str]:
                     status_value: Optional[str] = None
                     if status_column_index is not None and len(row) > status_column_index:
                         status_value = str(row[status_column_index]).strip().lower()
-                    elif status_column_index is None and len(row) > domain_column_index + 1:
-                        candidate_status = str(row[-1]).strip().lower()
-                        if candidate_status in {
-                            PROCESSED_STATUS_AVAILABLE.lower(),
-                            PROCESSED_STATUS_TAKEN.lower(),
-                            PROCESSED_STATUS_ERROR.lower(),
-                        }:
-                            status_value = candidate_status
                     if status_value is None or status_value != PROCESSED_STATUS_AVAILABLE.lower():
                         continue
                     if domain:
