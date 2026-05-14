@@ -1507,7 +1507,12 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                 else:
                     LOGGER.info("Processed CSV missing or empty; skipping Telegram upload.")
             except Exception:
-                LOGGER.exception("Processed CSV upload failed")
+                LOGGER.exception(
+                    "Processed CSV upload failed path=%s chat_id=%s topic_id=%s",
+                    PROCESSED_CSV_PATH,
+                    MAIN_CHAT_ID,
+                    TELEGRAM_TOPIC_ID,
+                )
             return summary
     finally:
         store.close()
