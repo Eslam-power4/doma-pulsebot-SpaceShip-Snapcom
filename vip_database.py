@@ -26,6 +26,7 @@ def _strip_trailing_tld_suffixes(value: str) -> str:
     if not clean:
         return ""
     labels = [label for label in clean.split(".") if label]
+    # Drop repeated trailing labels from malformed inputs (e.g., example.com.com).
     while len(labels) >= 2 and labels[-1] == labels[-2]:
         labels.pop()
     if not labels:
