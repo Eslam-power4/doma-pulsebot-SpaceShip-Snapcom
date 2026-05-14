@@ -30,6 +30,7 @@ jobs:
 
     - name: 4. Execute Sniper Bot (Stealth Mode)
       timeout-minutes: 115
+      continue-on-error: true
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         SPACESHIP_API_KEY: ${{ secrets.SPACESHIP_API_KEY }}
@@ -38,6 +39,7 @@ jobs:
         python bot.py
 
     - name: 5. Save State & Memory for Tomorrow (Auto-Commit)
+      if: always()
       run: |
         git config --global user.name "Sniper-Bot-Automation"
         git config --global user.email "bot@sniper.local"

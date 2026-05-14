@@ -35,6 +35,7 @@ jobs:
 
     - name: 4. 🚀 Execute Sniper Engine (Unrestricted Stealth Mode)
       timeout-minutes: 115 # ⏱️ 2. حماية الرصيد: إيقاف السيرفر إجبارياً قبل ما يكمل ساعتين عشان ميسحبش الحصة المجانية
+      continue-on-error: true
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         SPACESHIP_API_KEY: ${{ secrets.SPACESHIP_API_KEY }}
@@ -55,6 +56,7 @@ jobs:
 
     - name: 6. 💾 Auto-Commit & Push (Bulletproof Sync)
       # 🧠 4. الرفع الذكي: يتأكد إن في تغيير حصل فعلاً، ويعمل دمج آمن عشان المشروع ميبصش
+      if: always()
       run: |
         git config --global user.name "Sniper-AI-Architect"
         git config --global user.email "architect@sniper.local"

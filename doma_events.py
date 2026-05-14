@@ -1493,6 +1493,21 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
             }
             app.bot_data["scan_cycle_counter"] = int(app.bot_data.get("scan_cycle_counter", 0)) + 1
             app.bot_data["latest_scan_summary"] = summary
+            processed_csv_path = Path(__file__).with_name("processed_domains.csv")
+            try:
+                if processed_csv_path.exists() and processed_csv_path.stat().st_size > 0:
+                    with processed_csv_path.open("rb") as handle:
+                        await app.bot.send_document(
+                            chat_id=int(MAIN_CHAT_ID),
+                            message_thread_id=TELEGRAM_TOPIC_ID,
+                            document=handle,
+                            filename=processed_csv_path.name,
+                        )
+                    LOGGER.info("Processed CSV sent to Telegram topic=%s", TELEGRAM_TOPIC_ID)
+                else:
+                    LOGGER.info("Processed CSV missing or empty; skipping Telegram upload.")
+            except Exception as csv_exc:
+                LOGGER.exception("Processed CSV upload failed: %s", csv_exc)
             return summary
     finally:
         store.close()
