@@ -52,7 +52,7 @@ jobs:
         path: |
           alerts.db
           processed_domains.csv
-        retention-days: 7 # يحفظ النسخة دي لمدة 7 أيام وتقدر تحملها
+        retention-days: 4 # يحفظ النسخة دي لمدة 7 أيام وتقدر تحملها
 
     - name: 6. 💾 Auto-Commit & Push (Bulletproof Sync)
       # 🧠 4. الرفع الذكي: يتأكد إن في تغيير حصل فعلاً، ويعمل دمج آمن عشان المشروع ميبصش
