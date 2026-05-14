@@ -41,6 +41,8 @@ PROCESSED_STATUS_ALLOWED = {
     PROCESSED_STATUS_TAKEN,
     PROCESSED_STATUS_ERROR,
 }
+PROCESSED_CSV_HEADER_ROW_INDEX = 0
+PROCESSED_CSV_MIN_COLUMNS = 2
 MAX_SUITABLE_PRICE_USD = 50.00
 PREMIUM_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
     ("pricing", "premium", "register"),
@@ -997,8 +999,6 @@ def load_processed_available_domains() -> set[str]:
     Includes domains marked as Available, Taken, or Error to prevent re-checking.
     """
     output_path = Path(__file__).with_name("processed_domains.csv")
-    header_row_index = 0
-    min_required_columns = 2
     processed_domains: set[str] = set()
     if not output_path.exists():
         return processed_domains
@@ -1009,9 +1009,9 @@ def load_processed_available_domains() -> set[str]:
                 for index, row in enumerate(reader):
                     if not row:
                         continue
-                    if index == header_row_index and str(row[0]).strip().lower() == "keyword":
+                    if index == PROCESSED_CSV_HEADER_ROW_INDEX and str(row[0]).strip().lower() == "keyword":
                         continue
-                    if len(row) < min_required_columns:
+                    if len(row) < PROCESSED_CSV_MIN_COLUMNS:
                         continue
                     domain = str(row[1]).strip().lower()
                     if domain:
