@@ -1,6 +1,7 @@
 import asyncio
 import csv
 import html
+import io
 import logging
 import os
 import random
@@ -14,7 +15,7 @@ from typing import Any, Optional
 
 import aiohttp
 from telegram import InlineKeyboardMarkup
-from telegram.error import RetryAfter
+from telegram.error import RetryAfter, TelegramError
 from telegram.ext import Application
 
 from vip_database import VipRecord, get_vip_database
@@ -1495,8 +1496,12 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
             app.bot_data["scan_cycle_counter"] = int(app.bot_data.get("scan_cycle_counter", 0)) + 1
             app.bot_data["latest_scan_summary"] = summary
             try:
-                if PROCESSED_CSV_PATH.exists() and PROCESSED_CSV_PATH.stat().st_size > 0:
-                    with PROCESSED_CSV_PATH.open("rb") as handle:
+                csv_payload = None
+                with PROCESSED_CSV_LOCK:
+                    if PROCESSED_CSV_PATH.exists() and PROCESSED_CSV_PATH.stat().st_size > 0:
+                        csv_payload = PROCESSED_CSV_PATH.read_bytes()
+                if csv_payload:
+                    with io.BytesIO(csv_payload) as handle:
                         await app.bot.send_document(
                             chat_id=int(MAIN_CHAT_ID),
                             message_thread_id=TELEGRAM_TOPIC_ID,
@@ -1506,12 +1511,13 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                     LOGGER.info("Processed CSV sent to Telegram topic=%s", TELEGRAM_TOPIC_ID)
                 else:
                     LOGGER.info("Processed CSV missing or empty; skipping Telegram upload.")
-            except Exception:
+            except (OSError, TelegramError) as exc:
                 LOGGER.exception(
-                    "Processed CSV upload failed path=%s chat_id=%s topic_id=%s",
+                    "Processed CSV upload failed path=%s chat_id=%s topic_id=%s error=%s",
                     PROCESSED_CSV_PATH,
                     MAIN_CHAT_ID,
                     TELEGRAM_TOPIC_ID,
+                    exc,
                 )
             return summary
     finally:
