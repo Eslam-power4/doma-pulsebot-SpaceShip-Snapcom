@@ -1506,7 +1506,7 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                     LOGGER.info("Processed CSV sent to Telegram topic=%s", TELEGRAM_TOPIC_ID)
                 else:
                     LOGGER.info("Processed CSV missing or empty; skipping Telegram upload.")
-            except Exception as csv_exc:
+            except Exception:
                 LOGGER.exception("Processed CSV upload failed")
             return summary
     finally:
