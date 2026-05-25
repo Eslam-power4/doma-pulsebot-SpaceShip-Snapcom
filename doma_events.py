@@ -173,6 +173,7 @@ PRICE_FALLBACK_KEYWORD_SCORES: tuple[tuple[str, int], ...] = (
     ("renew", 1),
     ("usd", 1),
 )
+PRICE_KEY_WEIGHTS = PRICE_FALLBACK_KEYWORD_SCORES
 
 # Spaceship-specific throttle / batch controls
 # ─ 2 s intra-batch delay as required; keep default 429-backoff seed here too
@@ -490,7 +491,7 @@ def _has_tier_token(normalized: str) -> bool:
     if normalized == "tiered":
         return True
     if len(normalized) > len(tier_prefix) and normalized.startswith(tier_prefix):
-        if normalized[len(tier_prefix) :].isdigit():
+        if normalized[len(tier_prefix):].isdigit():
             return True
     tokens = re.split(r"[\s_-]+", normalized)
     return tier_prefix in tokens
