@@ -488,7 +488,7 @@ def _is_truthy_premium_flag(value: Any) -> bool:
 def _has_tier_token(normalized: str) -> bool:
     if normalized == "tiered":
         return True
-    if normalized.startswith("tier") and normalized[4:].isdigit():
+    if len(normalized) > 4 and normalized.startswith("tier") and normalized[4:].isdigit():
         return True
     tokens = re.split(r"[\s_-]+", normalized)
     return "tier" in tokens
