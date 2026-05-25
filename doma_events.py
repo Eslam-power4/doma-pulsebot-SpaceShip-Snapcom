@@ -487,7 +487,7 @@ def _is_truthy_premium_flag(value: Any) -> bool:
 
 def _has_tier_token(normalized: str) -> bool:
     tier_prefix = "tier"
-    if normalized == f"{tier_prefix}ed":
+    if normalized == "tiered":
         return True
     if len(normalized) > len(tier_prefix) and normalized.startswith(tier_prefix):
         if normalized[len(tier_prefix) :].isdigit():
@@ -621,7 +621,7 @@ def _collect_price_candidates(node: Any) -> tuple[list[tuple[int, float]], list[
 
 def _extract_price_from_payload_fallback(payload: Any) -> Optional[float]:
     """
-    Return best-scored price via PRICE_FALLBACK_KEYWORD_SCORES, else max numeric value from any field, else None.
+    Return the best-scored price via PRICE_FALLBACK_KEYWORD_SCORES; otherwise return the max numeric value, or None.
     """
     candidates, numbers = _collect_price_candidates(payload)
     if candidates:
