@@ -49,17 +49,34 @@ PROCESSED_CSV_DOMAIN_HEADERS = ("full_domain", "domain")
 PROCESSED_CSV_STATUS_HEADERS = ("status",)
 MAX_SUITABLE_PRICE_USD = 50.00
 PREMIUM_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
+    ("pricing", "premium", "registerPrice", "amount"),
+    ("pricing", "premium", "registerPrice", "value"),
+    ("pricing", "premium", "registerPrice", "price"),
+    ("pricing", "premium", "registerPrice", "usd"),
     ("pricing", "premium", "register"),
     ("pricing", "premium", "registerPrice"),
+    ("pricing", "premium", "registrationPrice", "amount"),
+    ("pricing", "premium", "registrationPrice", "value"),
+    ("pricing", "premium", "registrationPrice", "price"),
+    ("pricing", "premium", "registrationPrice", "usd"),
     ("pricing", "premium", "registration"),
     ("pricing", "premium", "registrationPrice"),
+    ("pricing", "premium", "price", "amount"),
+    ("pricing", "premium", "price", "value"),
+    ("pricing", "premium", "price", "usd"),
     ("pricing", "premium", "price"),
     ("pricing", "premium", "amount"),
     ("pricing", "premium", "cost"),
     ("pricing", "premium", "value"),
     ("premiumPrice",),
+    ("premium", "register", "amount"),
+    ("premium", "register", "value"),
+    ("premium", "register", "price"),
     ("premium", "register"),
     ("premium", "registerPrice"),
+    ("premium", "registrationPrice", "amount"),
+    ("premium", "registrationPrice", "value"),
+    ("premium", "registrationPrice", "price"),
     ("premium", "registration"),
     ("premium", "registrationPrice"),
     ("premium", "price"),
@@ -68,29 +85,81 @@ PREMIUM_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
     ("premium", "value"),
 )
 STANDARD_PRICE_PATHS: tuple[tuple[str, ...], ...] = (
+    ("pricing", "standard", "registerPrice", "amount"),
+    ("pricing", "standard", "registerPrice", "value"),
+    ("pricing", "standard", "registerPrice", "price"),
+    ("pricing", "standard", "registerPrice", "usd"),
     ("pricing", "standard", "register"),
     ("pricing", "standard", "registerPrice"),
+    ("pricing", "standard", "registrationPrice", "amount"),
+    ("pricing", "standard", "registrationPrice", "value"),
+    ("pricing", "standard", "registrationPrice", "price"),
+    ("pricing", "standard", "registrationPrice", "usd"),
     ("pricing", "standard", "registration"),
     ("pricing", "standard", "registrationPrice"),
+    ("pricing", "standard", "price", "amount"),
+    ("pricing", "standard", "price", "value"),
+    ("pricing", "standard", "price", "usd"),
     ("pricing", "standard", "price"),
     ("pricing", "standard", "amount"),
     ("pricing", "standard", "cost"),
     ("pricing", "standard", "value"),
+    ("pricing", "registerPrice", "amount"),
+    ("pricing", "registerPrice", "value"),
+    ("pricing", "registerPrice", "price"),
+    ("pricing", "registerPrice", "usd"),
     ("pricing", "register"),
     ("pricing", "registerPrice"),
+    ("pricing", "registrationPrice", "amount"),
+    ("pricing", "registrationPrice", "value"),
+    ("pricing", "registrationPrice", "price"),
+    ("pricing", "registrationPrice", "usd"),
     ("pricing", "registration"),
     ("pricing", "registrationPrice"),
     ("pricing", "price"),
     ("price",),
+    ("registerPrice", "amount"),
+    ("registerPrice", "value"),
+    ("registerPrice", "price"),
+    ("registerPrice", "usd"),
     ("registerPrice",),
+    ("registrationPrice", "amount"),
+    ("registrationPrice", "value"),
+    ("registrationPrice", "price"),
+    ("registrationPrice", "usd"),
     ("registrationPrice",),
     ("amount",),
     ("cost",),
     ("value",),
 )
+PREMIUM_FLAG_PATHS: tuple[tuple[str, ...], ...] = (
+    ("isPremium",),
+    ("premium",),
+    ("is_premium",),
+    ("pricing", "isPremium"),
+    ("pricing", "premium", "isPremium"),
+    ("pricing", "premium", "premium"),
+    ("pricing", "premium", "enabled"),
+    ("pricing", "premium", "flag"),
+    ("pricing", "premium", "isPremiumDomain"),
+)
+PREMIUM_TIER_PATHS: tuple[tuple[str, ...], ...] = (
+    ("tier",),
+    ("priceTier",),
+    ("pricing", "tier"),
+    ("pricing", "priceTier"),
+    ("pricing", "tierName"),
+    ("pricing", "tierLevel"),
+    ("pricing", "category"),
+    ("pricing", "premium", "tier"),
+    ("pricing", "premium", "priceTier"),
+    ("pricing", "premium", "tierName"),
+    ("pricing", "premium", "tierLevel"),
+    ("pricing", "premium", "category"),
+)
 # Weights are additive; higher totals win during fallback scoring, with higher prices breaking ties.
 # Explicit pricing keys are weighted higher than generic value-like fields.
-PRICE_KEY_WEIGHTS: tuple[tuple[str, int], ...] = (
+PRICE_FALLBACK_KEYWORD_SCORES: tuple[tuple[str, int], ...] = (
     ("price", 6),
     ("register", 5),
     ("registration", 5),
@@ -130,9 +199,9 @@ class DomainOpportunity:
     ask_price_usd: Optional[float]
     domain_price: str
     is_suitable: bool
-    is_premium: bool
     source: str
     listing_url: str
+    is_premium: bool = False
     currency: str = "USD"
     availability_status: str = "Available"
 
@@ -398,16 +467,69 @@ def _read_dict_path(node: dict[str, Any], path: tuple[str, ...]) -> Any:
     return current
 
 
-def _is_premium_domain_item(item: dict[str, Any]) -> bool:
-    for flag_key in ("isPremium", "premium"):
-        flag_value = item.get(flag_key)
-        if isinstance(flag_value, bool) and flag_value:
+def _is_truthy_premium_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value > 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if not normalized:
+            return False
+        if normalized in {"true", "yes", "premium", "tiered", "1"}:
             return True
-        if isinstance(flag_value, str) and flag_value.strip().lower() == "true":
+        if normalized in {"false", "no", "standard", "basic", "regular", "0"}:
+            return False
+        if "premium" in normalized:
             return True
-    tier_value = item.get("tier")
-    if isinstance(tier_value, str) and tier_value.strip().lower() == "premium":
+    return False
+
+
+def _has_tier_token(normalized: str) -> bool:
+    tier_prefix = "tier"
+    if tier_prefix not in normalized:
+        return False
+    if normalized == "tiered":
         return True
+    if len(normalized) > len(tier_prefix) and normalized.startswith(tier_prefix):
+        if normalized[len(tier_prefix):].isdigit():
+            return True
+    tokens = re.split(r"[\s_-]+", normalized)
+    return tier_prefix in tokens
+
+
+def _is_premium_tier_value(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value > 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if not normalized:
+            return False
+        if normalized in {"standard", "basic", "regular", "normal", "default", "base"}:
+            return False
+        if normalized in {"gold", "platinum", "diamond", "vip"}:
+            return True
+        if "premium" in normalized or _has_tier_token(normalized):
+            return True
+    return False
+
+
+def _is_premium_domain_item(item: dict[str, Any]) -> bool:
+    for path in PREMIUM_FLAG_PATHS:
+        flag_value = _read_dict_path(item, path)
+        if _is_truthy_premium_flag(flag_value):
+            return True
+    for path in PREMIUM_TIER_PATHS:
+        tier_value = _read_dict_path(item, path)
+        if _is_premium_tier_value(tier_value):
+            return True
+    premium_price = _extract_price_from_paths(item, PREMIUM_PRICE_PATHS)
+    if premium_price is not None:
+        standard_price = _extract_price_from_paths(item, STANDARD_PRICE_PATHS)
+        if standard_price is None:
+            return True
     return False
 
 
@@ -449,7 +571,7 @@ def _score_price_key(key: Any) -> int:
     if not normalized:
         return 0
     score = 0
-    for token, weight in PRICE_KEY_WEIGHTS:
+    for token, weight in PRICE_FALLBACK_KEYWORD_SCORES:
         if token in normalized:
             score += weight
     return score
@@ -500,7 +622,9 @@ def _collect_price_candidates(node: Any) -> tuple[list[tuple[int, float]], list[
 
 
 def _extract_price_from_payload_fallback(payload: Any) -> Optional[float]:
-    """Return best-scored price via PRICE_KEY_WEIGHTS, else max numeric value from any field, else None."""
+    """
+    Return the best-scored price via PRICE_FALLBACK_KEYWORD_SCORES; otherwise return the max numeric value, or None.
+    """
     candidates, numbers = _collect_price_candidates(payload)
     if candidates:
         return max(candidates, key=lambda pair: (pair[0], pair[1]))[1]
@@ -510,7 +634,11 @@ def _extract_price_from_payload_fallback(payload: Any) -> Optional[float]:
 
 
 # REPLACE HERE: Deterministic multi-layer Spaceship price extractor
-def extract_spaceship_price(payload: Any, domain_name: str) -> Optional[float]:
+def extract_spaceship_price(
+    payload: Any,
+    domain_name: str,
+    is_premium: Optional[bool] = None,
+) -> Optional[float]:
     """
     Deterministic extractor:
     1) match exact domain object,
@@ -523,7 +651,8 @@ def extract_spaceship_price(payload: Any, domain_name: str) -> Optional[float]:
     if item is None:
         return _extract_price_from_payload_fallback(payload)
 
-    is_premium = _is_premium_domain_item(item)
+    if is_premium is None:
+        is_premium = _is_premium_domain_item(item)
     preferred_paths = PREMIUM_PRICE_PATHS if is_premium else STANDARD_PRICE_PATHS
     secondary_paths = STANDARD_PRICE_PATHS if is_premium else PREMIUM_PRICE_PATHS
 
@@ -869,7 +998,8 @@ def _parse_domain_item(item: dict, fallback_domain: str) -> Optional["DomainOppo
         )
         return None
 
-    verified_price = extract_spaceship_price(item, normalized_domain)
+    is_premium = _is_premium_domain_item(item)
+    verified_price = extract_spaceship_price(item, normalized_domain, is_premium=is_premium)
     ask_price = verified_price
     if verified_price is None:
         domain_price = PRICE_VERIFICATION_FAILED_TEXT
@@ -885,7 +1015,7 @@ def _parse_domain_item(item: dict, fallback_domain: str) -> Optional["DomainOppo
         ask_price_usd=ask_price,
         domain_price=domain_price,
         is_suitable=(ask_price is not None and ask_price <= MAX_SUITABLE_PRICE_USD),
-        is_premium=_is_premium_domain_item(item),
+        is_premium=is_premium,
         source="Spaceship Availability API",
         listing_url=buy_link,
         currency="USD",
@@ -979,13 +1109,19 @@ def _domain_status_from_item(item: dict[str, Any]) -> tuple[bool, str]:
     return False, "Unavailable"
 
 
-def log_to_processed_csv(base_keyword: str, full_domain: str, status: str) -> None:
+def log_to_processed_csv(
+    base_keyword: str,
+    full_domain: str,
+    status: str,
+    price_usd: str = "N/A",
+) -> None:
     """
     Persist per-domain processing result to processed_domains.csv.
 
     - Opens file in append mode.
     - Auto-creates with header when absent.
     - Status is constrained to: Available, Taken, Error.
+    - Price_USD records the verified price or a placeholder string (e.g., N/A).
     """
     normalized_status = status if status in PROCESSED_STATUS_ALLOWED else PROCESSED_STATUS_ERROR
     output_path = PROCESSED_CSV_PATH
@@ -998,12 +1134,13 @@ def log_to_processed_csv(base_keyword: str, full_domain: str, status: str) -> No
         with output_path.open("a", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle)
             if file_is_empty:
-                writer.writerow(["Keyword", "Full_Domain", "Status"])
+                writer.writerow(["Keyword", "Full_Domain", "Status", "Price_USD"])
             writer.writerow(
                 [
                     str(base_keyword or "").strip(),
                     str(full_domain or "").strip().lower(),
                     normalized_status,
+                    str(price_usd or "").strip(),
                 ]
             )
 
@@ -1396,13 +1533,19 @@ async def fetch_spaceship_domains(app: Application) -> dict[str, int]:
                 batch = selected_domains[idx : idx + SPACESHIP_BULK_BATCH_SIZE]
                 batch_opps, batch_statuses = await check_domains_with_single_retry(client, batch)
                 opportunities.extend(batch_opps)
+                price_by_domain = {
+                    opp.domain.strip().lower(): opp.domain_price for opp in batch_opps
+                }
                 for checked_domain in batch:
                     clean_domain = str(checked_domain or "").strip().lower()
                     if not clean_domain:
                         continue
                     base_keyword = _base_keyword_from_domain(clean_domain)
                     status = batch_statuses.get(clean_domain, PROCESSED_STATUS_ERROR)
-                    log_to_processed_csv(base_keyword, clean_domain, status)
+                    price_usd = "N/A"
+                    if status == PROCESSED_STATUS_AVAILABLE:
+                        price_usd = price_by_domain.get(clean_domain, "N/A")
+                    log_to_processed_csv(base_keyword, clean_domain, status, price_usd)
                     if status == PROCESSED_STATUS_ERROR:
                         api_blocked_failed += 1
                 # Intra-batch delay: simulate natural traffic; required anti-ban measure
