@@ -173,7 +173,6 @@ PRICE_FALLBACK_KEYWORD_SCORES: tuple[tuple[str, int], ...] = (
     ("renew", 1),
     ("usd", 1),
 )
-PRICE_KEY_WEIGHTS = PRICE_FALLBACK_KEYWORD_SCORES
 
 # Spaceship-specific throttle / batch controls
 # ─ 2 s intra-batch delay as required; keep default 429-backoff seed here too
@@ -488,6 +487,8 @@ def _is_truthy_premium_flag(value: Any) -> bool:
 
 def _has_tier_token(normalized: str) -> bool:
     tier_prefix = "tier"
+    if tier_prefix not in normalized:
+        return False
     if normalized == "tiered":
         return True
     if len(normalized) > len(tier_prefix) and normalized.startswith(tier_prefix):
