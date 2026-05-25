@@ -485,6 +485,15 @@ def _is_truthy_premium_flag(value: Any) -> bool:
     return False
 
 
+def _has_tier_token(normalized: str) -> bool:
+    if normalized == "tiered":
+        return True
+    if normalized.startswith("tier") and normalized[4:].isdigit():
+        return True
+    tokens = re.split(r"[\s_-]+", normalized)
+    return "tier" in tokens
+
+
 def _is_premium_tier_value(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -498,7 +507,7 @@ def _is_premium_tier_value(value: Any) -> bool:
             return False
         if normalized in {"gold", "platinum", "diamond", "vip"}:
             return True
-        if "premium" in normalized or "tier" in normalized:
+        if "premium" in normalized or _has_tier_token(normalized):
             return True
     return False
 
@@ -1096,7 +1105,12 @@ def _domain_status_from_item(item: dict[str, Any]) -> tuple[bool, str]:
     return False, "Unavailable"
 
 
-def log_to_processed_csv(base_keyword: str, full_domain: str, status: str, price_usd: str) -> None:
+def log_to_processed_csv(
+    base_keyword: str,
+    full_domain: str,
+    status: str,
+    price_usd: str = "N/A",
+) -> None:
     """
     Persist per-domain processing result to processed_domains.csv.
 
