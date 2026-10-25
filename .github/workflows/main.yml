@@ -1,15 +1,28 @@
 name: Enterprise Daily Sniper & State Saver
 
 on:
-  workflow_dispatch: # زرار التشغيل اليدوي
+  workflow_dispatch: # زرار التشغيل اليدوي من الموقع مباشرة مع إمكانية التحكم في الوقت
+    inputs:
+      custom_timeout:
+        description: 'مدة التشغيل بالدقائق (اتركها 20 للوضع السريع أو 115 للوضع العميق)'
+        required: false
+        default: '20'
   schedule:
-    - cron: '0 4 * * *' # هيشتغل أوتوماتيك كل يوم الساعة 4 الفجر بتوقيت جرينتش (الصبح بدري عندك)
+    # يعمل الساعة 4:05 الفجر بتوقيت جرينتش (قبل بوت الدوت آب بـ 10 دقائق لمنع التصادم)
+    - cron: '05 4 * * *'
+
+# منع تشغيل نسختين في نفس اللحظة حتى لا تتلف قاعدة البيانات
+concurrency:
+  group: sniper-domain-group
+  cancel-in-progress: false
 
 jobs:
   sniper-mission:
     runs-on: ubuntu-latest
+    # السيطرة على وقت المهمة بالكامل (20 دقيقة أوتوماتيك، أو حسب اختيارك لو شغلته يدوي)
+    timeout-minutes: ${{ fromJSON(inputs.custom_timeout || '20') }}
     permissions:
-      contents: write # صلاحية إجبارية عشان البوت يقدر يحفظ الشيت ويرفعه تاني للمشروع
+      contents: write # صلاحية إجبارية لحفظ قاعدة البيانات والشيت والـ VIP
 
     steps:
     - name: 1. Checkout Repository
@@ -29,21 +42,28 @@ jobs:
         pip install -r requirements.txt
 
     - name: 4. Execute Sniper Bot (Stealth Mode)
-      timeout-minutes: 115
+      # ضمان استمرار الورك فلو لخطوة الحفظ حتى لو انتهى وقت البوت أو حدث خطأ مفاجئ
       continue-on-error: true
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         SPACESHIP_API_KEY: ${{ secrets.SPACESHIP_API_KEY }}
         SPACESHIP_API_SECRET: ${{ secrets.SPACESHIP_API_SECRET }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       run: |
         python bot.py
 
-    - name: 5. Save State & Memory for Tomorrow (Auto-Commit)
-      if: always()
+    - name: 5. Save State & Memory for Tomorrow (Force Auto-Commit)
+      if: ${{ always() }}
       run: |
         git config --global user.name "Sniper-Bot-Automation"
         git config --global user.email "bot@sniper.local"
-        # بيسحب الشيت والداتا بيز ويرفعهم عشان البوت يقرأهم بكرا
-        git add -f alerts.db processed_domains.csv || echo "No files to add"
-        git commit -m "Auto-save: Update daily domain state [skip ci]" || echo "No changes to commit"
+        
+        # إضافة جميع ملفات الذاكرة والـ Checkpoint ومجلد vip_data الموجود في مشروعك
+        git add -f alerts.db processed_domains.csv vip_data/ checkpoint*.json 2>/dev/null || echo "Some optional files not present yet"
+        
+        # حفظ التغييرات مع عمل Pull تلقائي قبل الـ Push لمنع أي تصادم (Conflict)
+        git commit -m "Auto-save: Update daily domain memory state [skip ci]" || echo "No changes to commit"
+        git pull --rebase origin main || true
         git push
